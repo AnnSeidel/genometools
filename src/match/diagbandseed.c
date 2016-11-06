@@ -1691,8 +1691,6 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
                                         GtProcessinfo_and_querymatchspaceptr
                                           *info_querymatch,
                                         GtReadmode query_readmode,
-                                        GtExtendSelfmatchRelativeFunc
-                                          extend_selfmatch_relative_function,
                                         GtExtendQuerymatchRelativeFunc
                                           extend_querymatch_relative_function,
                                         GtDiagbandseedCounts
@@ -1716,28 +1714,15 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
     }
 #endif
     ret = 1; /* perform extension */
-    if (aencseq == bencseq)
-    {
-      querymatch = extend_selfmatch_relative_function(info_querymatch,
-                                                      aencseq,
-                                                      aseqnum,
-                                                      astart,
-                                                      bseqnum,
-                                                      bstart,
-                                                      seedlength,
-                                                      query_readmode);
-    } else
-    {
-      querymatch = extend_querymatch_relative_function(info_querymatch,
-                                                       aencseq,
-                                                       aseqnum,
-                                                       astart,
-                                                       bencseq,
-                                                       bseqnum,
-                                                       bstart,
-                                                       seedlength,
-                                                       query_readmode);
-    }
+    querymatch = extend_querymatch_relative_function(info_querymatch,
+                                                     aencseq,
+                                                     aseqnum,
+                                                     astart,
+                                                     bencseq,
+                                                     bseqnum,
+                                                     bstart,
+                                                     seedlength,
+                                                     query_readmode);
 #ifndef _WIN32
     if (process_seeds_counts != NULL)
     {
@@ -1788,7 +1773,6 @@ static void gt_diagbandseed_process_segment(
              GtUword segment_length,
              GtProcessinfo_and_querymatchspaceptr *info_querymatch,
              GtReadmode query_readmode,
-             GtExtendSelfmatchRelativeFunc extend_selfmatch_relative_function,
              GtExtendQuerymatchRelativeFunc extend_querymatch_relative_function,
              GtDiagbandseedCounts *process_seeds_counts)
 {
@@ -1832,7 +1816,6 @@ static void gt_diagbandseed_process_segment(
                      bencseq,
                      info_querymatch,
                      query_readmode,
-                     extend_selfmatch_relative_function,
                      extend_querymatch_relative_function,
                      process_seeds_counts->withtiming ? process_seeds_counts
                                                       : NULL);
@@ -2004,7 +1987,6 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
 {
   GtDiagbandseedScore *diagband_score;
   GtDiagbandseedPosition *diagband_lastpos;
-  GtExtendSelfmatchRelativeFunc extend_selfmatch_relative_function = NULL;
   GtExtendQuerymatchRelativeFunc extend_querymatch_relative_function = NULL;
   GtProcessinfo_and_querymatchspaceptr info_querymatch;
   /* Although the sequences of the parts processed are shorter, we need to
@@ -2031,10 +2013,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   }
   /* select extension method */
   if (arg->extendgreedy) {
-    extend_selfmatch_relative_function = gt_greedy_extend_selfmatch_relative;
     extend_querymatch_relative_function = gt_greedy_extend_querymatch_relative;
   } else if (arg->extendxdrop) {
-    extend_selfmatch_relative_function = gt_xdrop_extend_selfmatch_relative;
     extend_querymatch_relative_function = gt_xdrop_extend_querymatch_relative;
   } else { /* no seed extension */
     return;
@@ -2129,7 +2109,6 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                       (GtUword) (nextsegm - currsegm),
                                       &info_querymatch,
                                       query_readmode,
-                                      extend_selfmatch_relative_function,
                                       extend_querymatch_relative_function,
                                       &process_seeds_counts);
     }
@@ -2221,7 +2200,6 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                         (GtUword) (nextsegm - currsegm),
                                         &info_querymatch,
                                         query_readmode,
-                                        extend_selfmatch_relative_function,
                                         extend_querymatch_relative_function,
                                         &process_seeds_counts);
       }
@@ -2324,7 +2302,6 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                         (GtUword) (spp_ptr - segment_positions),
                                         &info_querymatch,
                                         query_readmode,
-                                        extend_selfmatch_relative_function,
                                         extend_querymatch_relative_function,
                                         &process_seeds_counts);
       }
