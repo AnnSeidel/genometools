@@ -1677,24 +1677,34 @@ typedef struct
 #endif
 } GtDiagbandseedCounts;
 
+typedef const GtQuerymatch *(*GtExtendRelativeCoordsFunc)(void *,
+                                                          const GtEncseq *,
+                                                          GtUword,
+                                                          GtUword,
+                                                          const GtEncseq *,
+                                                          GtUword,
+                                                          GtUword,
+                                                          GtUword,
+                                                          GtReadmode);
+
 static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
-                                        GtUword aseqnum,
-                                        GtUword apos,
-                                        GtUword bseqnum,
-                                        GtUword bpos,
-                                        bool use_apos,
-                                        unsigned int seedlength,
-                                        GtUword errorpercentage,
-                                        GtUword userdefinedleastlength,
-                                        const GtEncseq *aencseq,
-                                        const GtEncseq *bencseq,
-                                        GtProcessinfo_and_querymatchspaceptr
-                                          *info_querymatch,
-                                        GtReadmode query_readmode,
-                                        GtExtendQuerymatchRelativeFunc
-                                          extend_querymatch_relative_function,
-                                        GtDiagbandseedCounts
-                                          *process_seeds_counts)
+                                           GtUword aseqnum,
+                                           GtUword apos,
+                                           GtUword bseqnum,
+                                           GtUword bpos,
+                                           bool use_apos,
+                                           unsigned int seedlength,
+                                           GtUword errorpercentage,
+                                           GtUword userdefinedleastlength,
+                                           const GtEncseq *aencseq,
+                                           const GtEncseq *bencseq,
+                                           GtProcessinfo_and_querymatchspaceptr
+                                             *info_querymatch,
+                                           GtReadmode query_readmode,
+                                           GtExtendRelativeCoordsFunc
+                                             extend_relative_coords_function,
+                                           GtDiagbandseedCounts
+                                             *process_seeds_counts)
 {
   int ret = 0;
   if (previousmatch == NULL ||
@@ -1714,7 +1724,7 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
     }
 #endif
     ret = 1; /* perform extension */
-    querymatch = extend_querymatch_relative_function(info_querymatch,
+    querymatch = extend_relative_coords_function(info_querymatch,
                                                      aencseq,
                                                      aseqnum,
                                                      astart,
@@ -1773,7 +1783,7 @@ static void gt_diagbandseed_process_segment(
              GtUword segment_length,
              GtProcessinfo_and_querymatchspaceptr *info_querymatch,
              GtReadmode query_readmode,
-             GtExtendQuerymatchRelativeFunc extend_querymatch_relative_function,
+             GtExtendRelativeCoordsFunc extend_relative_coords_function,
              GtDiagbandseedCounts *process_seeds_counts)
 {
   const GtSeedpairPositions *spp_ptr;
@@ -1816,7 +1826,7 @@ static void gt_diagbandseed_process_segment(
                      bencseq,
                      info_querymatch,
                      query_readmode,
-                     extend_querymatch_relative_function,
+                     extend_relative_coords_function,
                      process_seeds_counts->withtiming ? process_seeds_counts
                                                       : NULL);
       if (ret >= 1)
@@ -1987,7 +1997,7 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
 {
   GtDiagbandseedScore *diagband_score;
   GtDiagbandseedPosition *diagband_lastpos;
-  GtExtendQuerymatchRelativeFunc extend_querymatch_relative_function = NULL;
+  GtExtendRelativeCoordsFunc extend_relative_coords_function = NULL;
   GtProcessinfo_and_querymatchspaceptr info_querymatch;
   /* Although the sequences of the parts processed are shorter, we need to
      set amaxlen and bmaxlen to the maximum size of all sequences
@@ -2013,9 +2023,9 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   }
   /* select extension method */
   if (arg->extendgreedy) {
-    extend_querymatch_relative_function = gt_greedy_extend_querymatch_relative;
+    extend_relative_coords_function = gt_greedy_extend_querymatch_relative;
   } else if (arg->extendxdrop) {
-    extend_querymatch_relative_function = gt_xdrop_extend_querymatch_relative;
+    extend_relative_coords_function = gt_xdrop_extend_querymatch_relative;
   } else { /* no seed extension */
     return;
   }
@@ -2109,7 +2119,7 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                       (GtUword) (nextsegm - currsegm),
                                       &info_querymatch,
                                       query_readmode,
-                                      extend_querymatch_relative_function,
+                                      extend_relative_coords_function,
                                       &process_seeds_counts);
     }
   } else
@@ -2200,7 +2210,7 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                         (GtUword) (nextsegm - currsegm),
                                         &info_querymatch,
                                         query_readmode,
-                                        extend_querymatch_relative_function,
+                                        extend_relative_coords_function,
                                         &process_seeds_counts);
       }
     } else
@@ -2302,7 +2312,7 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                         (GtUword) (spp_ptr - segment_positions),
                                         &info_querymatch,
                                         query_readmode,
-                                        extend_querymatch_relative_function,
+                                        extend_relative_coords_function,
                                         &process_seeds_counts);
       }
     }
