@@ -1694,6 +1694,7 @@ typedef const GtQuerymatch *(*GtExtendRelativeCoordsFunc)(void *,
                                                           GtUword,
                                                           GtUword,
                                                           const GtSeqorEncseq *,
+                                                          bool,
                                                           GtUword,
                                                           GtUword,
                                                           GtUword,
@@ -1709,7 +1710,8 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
                                            GtUword errorpercentage,
                                            GtUword userdefinedleastlength,
                                            const GtEncseq *aencseq,
-                                           const GtSeqorEncseq *queryes,
+                                           const GtSeqorEncseq *bseqorencseq,
+                                           bool same_encseq,
                                            GtProcessinfo_and_querymatchspaceptr
                                              *info_querymatch,
                                            GtReadmode query_readmode,
@@ -1740,7 +1742,8 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
                                                  aencseq,
                                                  aseqnum,
                                                  astart,
-                                                 queryes,
+                                                 bseqorencseq,
+                                                 same_encseq,
                                                  bseqnum,
                                                  bstart,
                                                  seedlength,
@@ -1782,7 +1785,8 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
 static void gt_diagbandseed_process_segment(
              const GtDiagbandseedExtendParams *arg,
              const GtEncseq *aencseq,
-             const GtSeqorEncseq *queryes,
+             const GtSeqorEncseq *bseqorencseq,
+             bool same_encseq,
              GtUword amaxlen,
              unsigned int seedlength,
              GtUword diagbands_used,
@@ -1835,7 +1839,8 @@ static void gt_diagbandseed_process_segment(
                      arg->errorpercentage,
                      arg->userdefinedleastlength,
                      aencseq,
-                     queryes,
+                     bseqorencseq,
+                     same_encseq,
                      info_querymatch,
                      query_readmode,
                      extend_relative_coords_function,
@@ -1995,6 +2000,23 @@ static void gt_diagbandseed_process_seeds_stat(FILE *stream,
           allseqpairs);
 }
 
+#define USEBYTESTRING
+#ifdef USEBYTESTRING
+static void gt_diagbandseed_set_sequence(GtSeqorEncseq *seqorencseq,
+                                         const GtSequencePartsInfo *seqranges,
+                                         const GtUchar *bytesequence,
+                                         GtUword first_seqstartpos,
+                                         GtUword seqnum)
+{
+  const GtUword
+    seqstartpos = gt_sequence_parts_info_seqstartpos(seqranges,seqnum),
+    seqendpos = gt_sequence_parts_info_seqendpos(seqranges,seqnum),
+    b_off = seqstartpos - first_seqstartpos;
+    GT_SEQORENCSEQ_INIT_SEQ(seqorencseq,bytesequence + b_off,"fake",
+                            seqendpos - seqstartpos + 1);
+}
+#endif
+
 /* start seed extension for seeds in mlist */
 static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                           const GtDiagbandseedExtendParams *arg,
@@ -2013,10 +2035,11 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   GtDiagbandseedPosition *diagband_lastpos;
   GtExtendRelativeCoordsFunc extend_relative_coords_function = NULL;
   GtProcessinfo_and_querymatchspaceptr info_querymatch;
-  GtSeqorEncseq queryes;
+  GtSeqorEncseq bseqorencseq;
   const GtEncseq *aencseq = gt_seuence_part_info_encseq_get(aseqranges),
                  *bencseq = gt_seuence_part_info_encseq_get(bseqranges);
   GtUchar *a_byte_sequence, *b_byte_sequence;
+  const bool same_encseq = (aencseq == bencseq) ? true : false;
   /* Although the sequences of the parts processed are shorter, we need to
      set amaxlen and bmaxlen to the maximum size of all sequences
      to get the same division into diagonal bands for all parts and thus
@@ -2029,16 +2052,13 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   GtUword diagbands_used;
   GtTimer *timer = NULL;
   GtDiagbandseedCounts process_seeds_counts = {0,0,0,0,0};
-#define USEBYTESTRING
 #ifdef USEBYTESTRING
-  GtUword b_off, seqstartpos, seqendpos;
   const GtUword
     b_first_seqnum = gt_sequence_parts_info_start_get(bseqranges,bidx),
     b_first_seqstartpos = gt_sequence_parts_info_seqstartpos(bseqranges,
                                                              b_first_seqnum);
 #endif
-  GT_QUERYSEQORENCSEQ_INIT_ENCSEQ(queryes,bencseq,(aencseq == bencseq) ?
-                                                     true : false);
+  GT_SEQORENCSEQ_INIT_ENCSEQ(&bseqorencseq,bencseq);
 #ifndef _WIN32
   process_seeds_counts.withtiming = verbose;
   process_seeds_counts.total_extension_time_usec = 0;
@@ -2146,19 +2166,16 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
          second scan: test for mincoverage and overlap to previous extension,
          based on apos and bpos values. */
 #ifdef USEBYTESTRING
-      gt_assert(b_first_seqnum <= currsegm_bseqnum);
-      seqstartpos = gt_sequence_parts_info_seqstartpos(bseqranges,
-                                                       currsegm_bseqnum);
-      seqendpos = gt_sequence_parts_info_seqendpos(bseqranges,currsegm_bseqnum);
-      gt_assert(b_first_seqstartpos <= seqstartpos);
-      b_off = seqstartpos - b_first_seqstartpos;
-      GT_QUERYSEQORENCSEQ_INIT_SEQ(queryes,b_byte_sequence + b_off,"fake",
-                                   seqendpos - seqstartpos + 1,
-                                   (aencseq == bencseq) ? true : false);
+      gt_diagbandseed_set_sequence(&bseqorencseq,
+                                   bseqranges,
+                                   b_byte_sequence,
+                                   b_first_seqstartpos,
+                                   currsegm_bseqnum);
 #endif
       gt_diagbandseed_process_segment(arg,
                                       aencseq,
-                                      &queryes,
+                                      &bseqorencseq,
+                                      same_encseq,
                                       amaxlen,
                                       seedlength,
                                       diagbands_used,
@@ -2249,7 +2266,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
            based on apos and bpos values. */
         gt_diagbandseed_process_segment(arg,
                                         aencseq,
-                                        &queryes,
+                                        &bseqorencseq,
+                                        same_encseq,
                                         amaxlen,
                                         seedlength,
                                         diagbands_used,
@@ -2351,7 +2369,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
         currsegm_bseqnum += seedpairlist->bseqrange_start;
         gt_diagbandseed_process_segment(arg,
                                         aencseq,
-                                        &queryes,
+                                        &bseqorencseq,
+                                        same_encseq,
                                         amaxlen,
                                         seedlength,
                                         diagbands_used,
