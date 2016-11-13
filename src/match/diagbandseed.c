@@ -1769,7 +1769,7 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
       } else
       {
         ret = 2; /* found match, which does not satisfy length or similarity
-                    constraint */
+                    constraints */
       }
     }
   }
@@ -2639,7 +2639,7 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
     {
       gt_greedy_extend_matchinfo_trimstat_set(grextinfo,trimstat);
     }
-    processinfo = (void *)grextinfo;
+    processinfo = (void *) grextinfo;
   } else if (extp->extendxdrop) {
     GtXdropmatchinfo *xdropinfo = NULL;
     gt_assert(extp->extendgreedy == false);
@@ -2650,13 +2650,16 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
     if (extp->benchmark) {
       gt_xdrop_matchinfo_silent_set(xdropinfo);
     }
-    processinfo = (void *)xdropinfo;
+    processinfo = (void *) xdropinfo;
   }
-  if (extp->extendxdrop || extp->alignmentwidth > 0 ||
-      extp->verify_alignment) {
+  if (extp->extendxdrop || extp->alignmentwidth > 0 || extp->verify_alignment)
+  {
     querymoutopt = gt_querymatchoutoptions_new(true,
                                                false,
-                                               extp->alignmentwidth);
+                                               extp->alignmentwidth,
+                                               NULL,
+                                               NULL);
+    gt_assert(querymoutopt != NULL);
     if (extp->extendxdrop || extp->extendgreedy) {
       const GtUword sensitivity = extp->extendxdrop ? 100UL : extp->sensitivity;
       gt_querymatchoutoptions_extend(querymoutopt,
@@ -2672,7 +2675,6 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
                                      extp->display_flag);
     }
   }
-
   /* process first mlist */
   gt_assert(seedpairlist != NULL);
   gt_diagbandseed_process_seeds(seedpairlist,
@@ -2687,10 +2689,7 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
                                 arg->verbose,
                                 stream);
   gt_seedpairlist_reset(seedpairlist);
-  if (querymoutopt != NULL)
-  {
-    gt_querymatchoutoptions_reset(querymoutopt);
-  }
+  gt_querymatchoutoptions_reset(querymoutopt);
 
   /* Third (reverse) k-mer list */
   if (both_strands) {
@@ -2800,11 +2799,16 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
   gt_seedpairlist_delete(seedpairlist);
 
   /* Clean up */
-  if (extp->extendgreedy) {
+  if (extp->extendgreedy)
+  {
     polishing_info_delete(pol_info);
-    gt_greedy_extend_matchinfo_delete((GtGreedyextendmatchinfo *)processinfo);
-  } else if (extp->extendxdrop) {
-    gt_xdrop_matchinfo_delete((GtXdropmatchinfo *)processinfo);
+    gt_greedy_extend_matchinfo_delete((GtGreedyextendmatchinfo *) processinfo);
+  } else
+  {
+    if (extp->extendxdrop)
+    {
+      gt_xdrop_matchinfo_delete((GtXdropmatchinfo *) processinfo);
+    }
   }
   gt_querymatchoutoptions_delete(querymoutopt);
   return had_err;
