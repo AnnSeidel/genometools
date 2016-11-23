@@ -2029,7 +2029,8 @@ static void gt_diagbandseed_set_sequence(GtSeqorEncseq *seqorencseq,
                                          GtUword first_seqstartpos,
                                          GtUword seqnum,
                                          const GtUchar *characters,
-                                         GtUchar wildcardshow)
+                                         GtUchar wildcardshow,
+                                         bool haswildcards)
 {
   const GtUword
     seqstartpos = gt_sequence_parts_info_seqstartpos(seqranges,seqnum),
@@ -2037,12 +2038,13 @@ static void gt_diagbandseed_set_sequence(GtSeqorEncseq *seqorencseq,
     b_off = seqstartpos - first_seqstartpos;
   GT_SEQORENCSEQ_INIT_SEQ(seqorencseq,bytesequence + b_off,"fake",
                           seqendpos - seqstartpos + 1,characters,
-                          wildcardshow);
+                          wildcardshow,
+                          haswildcards);
 }
 
 typedef struct
 {
-  bool b_differs_from_a;
+  bool b_differs_from_a, a_haswildcards, b_haswildcards;
   const GtUchar *characters;
   GtUchar wildcardshow;
   GtSeqorEncseq bseqorencseq, aseqorencseq;
@@ -2072,10 +2074,12 @@ static void gt_diagband_seed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
       = gt_sequence_parts_info_seqstartpos(aseqranges,ps->a_first_seqnum),
     ps->a_byte_sequence = gt_sequence_parts_info_seq_extract(aencseq,aseqranges,
                                                              aidx);
+    ps->a_haswildcards = (gt_encseq_wildcards(aencseq) > 0) ? true : false;
   } else
   {
     ps->a_byte_sequence = NULL;
     GT_SEQORENCSEQ_INIT_ENCSEQ(&ps->aseqorencseq,aencseq);
+    ps->a_haswildcards = true;
   }
   if (with_b_bytestring)
   {
@@ -2086,16 +2090,19 @@ static void gt_diagband_seed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
     {
       ps->b_differs_from_a = false;
       ps->b_byte_sequence = ps->a_byte_sequence;
+      ps->b_haswildcards = ps->a_haswildcards;
     } else
     {
       ps->b_differs_from_a = true;
       ps->b_byte_sequence = gt_sequence_parts_info_seq_extract(bencseq,
                                                                bseqranges,bidx);
+      ps->b_haswildcards = (gt_encseq_wildcards(bencseq) > 0) ? true : false;
     }
   } else
   {
     ps->b_byte_sequence = NULL;
     GT_SEQORENCSEQ_INIT_ENCSEQ(&ps->bseqorencseq,bencseq);
+    ps->b_haswildcards = true;
   }
   if (with_a_bytestring || with_b_bytestring)
   {
@@ -2122,7 +2129,8 @@ static void gt_diagband_seed_plainsequence_next_segment(
                                    ps->a_first_seqstartpos,
                                    currsegm_aseqnum,
                                    ps->characters,
-                                   ps->wildcardshow);
+                                   ps->wildcardshow,
+                                   ps->a_haswildcards);
       ps->previous_aseqnum = currsegm_aseqnum;
     } else
     {
@@ -2147,7 +2155,8 @@ static void gt_diagband_seed_plainsequence_next_segment(
                                  ps->b_first_seqstartpos,
                                  currsegm_bseqnum,
                                  ps->characters,
-                                 ps->wildcardshow);
+                                 ps->wildcardshow,
+                                 ps->b_haswildcards);
   } else
   {
     GtUword seqstartpos = gt_sequence_parts_info_seqstartpos(bseqranges,
