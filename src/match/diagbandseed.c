@@ -2033,13 +2033,31 @@ static void gt_diagbandseed_set_sequence(GtSeqorEncseq *seqorencseq,
                                          GtUword seqnum,
                                          const GtUchar *characters,
                                          GtUchar wildcardshow,
-                                         bool haswildcards)
+                                         bool haswildcards,
+                                         const GtEncseq *encseq_for_seq_desc,
+                                         char *seqdescspace,
+                                         GT_UNUSED GtUword max_desc_length)
 {
   const GtUword
     seqstartpos = gt_sequence_parts_info_seqstartpos(seqranges,seqnum),
     seqendpos = gt_sequence_parts_info_seqendpos(seqranges,seqnum),
     b_off = seqstartpos - first_seqstartpos;
-  GT_SEQORENCSEQ_INIT_SEQ(seqorencseq,bytesequence + b_off,"fake",
+  const char *seqdescptr = NULL;
+  if (encseq_for_seq_desc != NULL)
+  {
+    GtUword desclen;
+    seqdescptr = gt_encseq_description(encseq_for_seq_desc,
+                                       &desclen,
+                                       seqnum);
+    gt_assert(desclen <= max_desc_length);
+    memcpy(seqdescspace,seqdescptr,desclen);
+    seqdescspace[desclen] = '\0';
+    seqdescptr = seqdescspace;
+  } else
+  {
+    seqdescptr = "Unknown";
+  }
+  GT_SEQORENCSEQ_INIT_SEQ(seqorencseq,bytesequence + b_off,seqdescptr,
                           seqendpos - seqstartpos + 1,characters,
                           wildcardshow,
                           haswildcards);
@@ -2050,16 +2068,20 @@ typedef struct
   bool b_differs_from_a, a_haswildcards, b_haswildcards;
   const GtUchar *characters;
   GtUchar wildcardshow;
-  GtSeqorEncseq bseqorencseq, aseqorencseq;
+  GtSeqorEncseq aseqorencseq, bseqorencseq;
   GtUchar *a_byte_sequence, *b_byte_sequence;
   GtUword previous_aseqnum,
           a_first_seqnum,
           a_first_seqstartpos,
           b_first_seqnum,
           b_first_seqstartpos;
-} GtDiagbandSeedPlainSequence;;
+  const GtEncseq *a_encseq_for_seq_desc, *b_encseq_for_seq_desc;
+  char *a_seqdescspace, *b_seqdescspace;
+  GtUword a_max_desc_length, b_max_desc_length;
+} GtDiagbandSeedPlainSequence;
 
 static void gt_diagband_seed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
+                                          bool seq_desc_display,
                                           const GtEncseq *aencseq,
                                           const GtSequencePartsInfo *aseqranges,
                                           GtUword aidx,
@@ -2070,6 +2092,32 @@ static void gt_diagband_seed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
                                           bool with_b_bytestring)
 {
   ps->previous_aseqnum = GT_UWORD_MAX;
+  if (seq_desc_display && aencseq != NULL &&
+      gt_encseq_has_description_support(aencseq))
+  {
+    ps->a_encseq_for_seq_desc = aencseq;
+    ps->a_max_desc_length = gt_encseq_max_desc_length(aencseq);
+    ps->a_seqdescspace = gt_malloc(sizeof *ps->a_seqdescspace *
+                                   (ps->a_max_desc_length + 1));
+  } else
+  {
+    ps->a_encseq_for_seq_desc = NULL;
+    ps->a_seqdescspace = NULL;
+    ps->a_max_desc_length = 0;
+  }
+  if (seq_desc_display && bencseq != NULL &&
+      gt_encseq_has_description_support(bencseq))
+  {
+    ps->b_encseq_for_seq_desc = bencseq;
+    ps->b_max_desc_length = gt_encseq_max_desc_length(bencseq);
+    ps->b_seqdescspace = gt_malloc(sizeof *ps->b_seqdescspace *
+                                   (ps->b_max_desc_length + 1));
+  } else
+  {
+    ps->b_encseq_for_seq_desc = NULL;
+    ps->b_seqdescspace = NULL;
+    ps->b_max_desc_length = 0;
+  }
   if (with_a_bytestring)
   {
     ps->a_first_seqnum = gt_sequence_parts_info_start_get(aseqranges,aidx);
@@ -2133,7 +2181,10 @@ static void gt_diagband_seed_plainsequence_next_segment(
                                    currsegm_aseqnum,
                                    ps->characters,
                                    ps->wildcardshow,
-                                   ps->a_haswildcards);
+                                   ps->a_haswildcards,
+                                   ps->a_encseq_for_seq_desc,
+                                   ps->a_seqdescspace,
+                                   ps->a_max_desc_length);
       ps->previous_aseqnum = currsegm_aseqnum;
     } else
     {
@@ -2159,7 +2210,10 @@ static void gt_diagband_seed_plainsequence_next_segment(
                                  currsegm_bseqnum,
                                  ps->characters,
                                  ps->wildcardshow,
-                                 ps->b_haswildcards);
+                                 ps->b_haswildcards,
+                                 ps->b_encseq_for_seq_desc,
+                                 ps->b_seqdescspace,
+                                 ps->b_max_desc_length);
   } else
   {
     GtUword seqstartpos = gt_sequence_parts_info_seqstartpos(bseqranges,
@@ -2179,6 +2233,14 @@ static void gt_diagband_seed_plainsequence_delete(
   if (ps->b_byte_sequence != NULL && ps->b_differs_from_a)
   {
     gt_free(ps->b_byte_sequence);
+  }
+  if (ps->a_seqdescspace != NULL)
+  {
+    gt_free(ps->a_seqdescspace);
+  }
+  if (ps->b_seqdescspace != NULL)
+  {
+    gt_free(ps->b_seqdescspace);
   }
   if (ps->a_byte_sequence != NULL)
   {
@@ -2240,6 +2302,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
     gt_timer_start(timer);
   }
   gt_diagband_seed_plainsequence_init(&plainsequence_info,
+                                      gt_querymatch_seq_desc_display(
+                                           extp->display_flag),
                                       aencseq,
                                       aseqranges,
                                       aidx,
@@ -2776,8 +2840,11 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
         seedpairlist = NULL;
       }
     }
+  } else
+  {
+    gt_seedpairlist_delete(seedpairlist);
+    seedpairlist = NULL;
   }
-
   if (use_blist) {
     GT_FREEARRAY(&blist, GtDiagbandseedKmerPos);
   }
