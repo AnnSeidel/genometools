@@ -59,6 +59,13 @@ void gt_seedextend_match_iterator_karlin_altschul_stat_set(
            GtSeedextendMatchIterator *semi,
            GtKarlinAltschulStat *karlin_altschul_stat);
 
+/* The following function sets the karlin_altschul_stat pointer to
+   the second argument */
+
+void gt_seedextend_match_iterator_karlin_altschul_stat_set(
+           GtSeedextendMatchIterator *semi,
+           GtKarlinAltschulStat *karlin_altschul_stat);
+
 /* The following function reads all matches into an arrays and sorts the,. If
    <ascending is true, then all matches are sorted in ascending order of
    the query position they occur at. Otherwise, all matches are sorted in
