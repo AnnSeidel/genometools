@@ -2005,24 +2005,12 @@ static void gt_diagbandseed_match_header(FILE *stream,
 static void gt_diagbandseed_info_qm_set(
                                    GtProcessinfo_and_querymatchspaceptr *ifqm,
                                    const GtDiagbandseedExtendParams *extp,
-                                   const GtEncseq *aencseq,
                                    GtQuerymatchoutoptions *querymoutopt,
-
                                    GtReadmode query_readmode,
                                    FILE *stream,
                                    void *processinfo)
 {
   ifqm->processinfo = processinfo;
-  if (gt_querymatch_evalue_display(extp->display_flag) ||
-      gt_querymatch_bitscore_display(extp->display_flag))
-  {
-    ifqm->karlin_altschul_stat = gt_karlin_altschul_stat_new_gapped(
-                                          gt_encseq_total_length(aencseq),
-                                          gt_encseq_num_of_sequences(aencseq));
-  } else
-  {
-    ifqm->karlin_altschul_stat = NULL;
-  }
   ifqm->querymatchspaceptr = gt_querymatch_new();
   gt_querymatch_display_set(ifqm->querymatchspaceptr,extp->display_flag);
   if (extp->verify_alignment)
@@ -2314,6 +2302,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                           const GtEncseq *bencseq,
                                           const GtSequencePartsInfo *bseqranges,
                                           GtUword bidx,
+                                          const GtKarlinAltschulStat
+                                            *karlin_altschul_stat,
                                           unsigned int seedlength,
                                           GtReadmode query_readmode,
                                           bool verbose,
@@ -2342,6 +2332,7 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   GtDiagbandseedCounts process_seeds_counts = {0,0,0,0,0};
   GtDiagbandSeedPlainSequence plainsequence_info;
 
+  info_querymatch.karlin_altschul_stat = karlin_altschul_stat;
   process_seeds_counts.withtiming = verbose;
   process_seeds_counts.total_extension_time_usec = 0;
   gt_assert(extp->mincoverage >= seedlength && minsegmentlen >= 1);
@@ -2389,7 +2380,6 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   }
   gt_diagbandseed_info_qm_set(&info_querymatch,
                               extp,
-                              aencseq,
                               querymoutopt,
                               query_readmode,
                               stream,
@@ -2699,7 +2689,6 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   gt_free(diagband_score);
   gt_free(diagband_lastpos);
   gt_querymatch_delete(info_querymatch.querymatchspaceptr);
-  gt_karlin_altschul_stat_delete(info_querymatch.karlin_altschul_stat);
   gt_diagband_seed_plainsequence_delete(&plainsequence_info);
   if (verbose)
   {
@@ -2749,6 +2738,8 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
                                      const GtEncseq *bencseq,
                                      const GtSequencePartsInfo *bseqranges,
                                      GtUword bidx,
+                                     const GtKarlinAltschulStat
+                                       *karlin_altschul_stat,
                                      GtFtTrimstat *trimstat,
                                      GtError *err)
 {
@@ -2782,7 +2773,6 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
   if (!alist_blist_id) {
     seedpairdistance.start = 0UL;
   }
-
   if (arg->verbose && (anumseqranges > 1 || bnumseqranges > 1))
   {
     fprintf(stream, "# process part " GT_WU " (sequences " GT_WU "..." GT_WU
@@ -3008,6 +2998,7 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
                                 querymoutopt,
                                 aencseq,aseqranges,aidx,
                                 bencseq,bseqranges,bidx,
+                                karlin_altschul_stat,
                                 arg->seedlength,
                                 arg->nofwd ? GT_READMODE_REVCOMPL
                                            : GT_READMODE_FORWARD,
@@ -3118,6 +3109,7 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
                                   querymoutopt,
                                   aencseq,aseqranges,aidx,
                                   bencseq,bseqranges,bidx,
+                                  karlin_altschul_stat,
                                   arg->seedlength,
                                   GT_READMODE_REVCOMPL,
                                   arg->verbose,
@@ -3159,6 +3151,7 @@ typedef struct{
   GtArray *combinations;
   int had_err;
   GtError *err;
+  const GtKarlinAltschulStat *karlin_altschul_stat;
 } GtDiagbandseedThreadInfo;
 
 static void gt_diagbandseed_thread_info_set(GtDiagbandseedThreadInfo *ti,
@@ -3169,6 +3162,8 @@ static void gt_diagbandseed_thread_info_set(GtDiagbandseedThreadInfo *ti,
                                      const GtSequencePartsInfo *aseqranges,
                                      const GtEncseq *bencseq,
                                      const GtSequencePartsInfo *bseqranges,
+                                     const GtKarlinAltschulStat
+                                       *karlin_altschul_stat,
                                      GtArray *combinations,
                                      GtError *err)
 {
@@ -3180,6 +3175,7 @@ static void gt_diagbandseed_thread_info_set(GtDiagbandseedThreadInfo *ti,
   ti->aseqranges = aseqranges;
   ti->bencseq = bencseq;
   ti->bseqranges = bseqranges;
+  ti->karlin_altschul_stat = karlin_altschul_stat;
   ti->combinations = gt_array_clone(combinations);
   ti->had_err = 0;
   ti->err = err;
@@ -3203,6 +3199,7 @@ static void *gt_diagbandseed_thread_algorithm(void *thread_info)
                            info->bencseq,
                            info->bseqranges,
                            comb->b,
+                           info->karlin_altschul_stat,
                            NULL,
                            info->err);
       if (info->had_err) break;
@@ -3254,6 +3251,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
   const GtUword anumseqranges = gt_sequence_parts_info_number(aseqranges),
                 bnumseqranges = gt_sequence_parts_info_number(bseqranges);
   GtFtTrimstat *trimstat = NULL;
+  GtKarlinAltschulStat *karlin_altschul_stat = NULL;
 #ifdef GT_THREADS_ENABLED
   GtDiagbandseedThreadInfo *tinfo = gt_malloc(gt_jobs * sizeof *tinfo);
   FILE **stream;
@@ -3308,6 +3306,13 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
   {
     trimstat = gt_ft_trimstat_new();
   }
+  if (gt_querymatch_evalue_display(arg->extp->display_flag) ||
+      gt_querymatch_bitscore_display(arg->extp->display_flag))
+  {
+    karlin_altschul_stat = gt_karlin_altschul_stat_new_gapped(
+                                      gt_encseq_total_length(arg->aencseq),
+                                      gt_encseq_num_of_sequences(arg->aencseq));
+  }
   for (aidx = 0; !had_err && aidx < anumseqranges; aidx++) {
     /* create alist here to prevent redundant calculations */
     char *path = NULL;
@@ -3353,6 +3358,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
                            stdout,
                            arg->aencseq,aseqranges,aidx,
                            arg->bencseq,bseqranges,bidx,
+                           karlin_altschul_stat,
                            trimstat,
                            err);
         }
@@ -3389,6 +3395,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
                                         aseqranges,
                                         arg->bencseq,
                                         bseqranges,
+                                        karlin_altschul_stat,
                                         combinations,
                                         err);
         gt_array_reset(combinations);
@@ -3420,6 +3427,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
                                         aseqranges,
                                         arg->bencseq,
                                         bseqranges,
+                                        karlin_altschul_stat,
                                         combinations,
                                         err);
         gt_diagbandseed_thread_algorithm(tinfo);
@@ -3472,6 +3480,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
                                       aseqranges,
                                       arg->bencseq,
                                       bseqranges,
+                                      karlin_altschul_stat,
                                       combinations[tidx],
                                       err);
       if ((thread = gt_thread_new(gt_diagbandseed_thread_algorithm,
@@ -3491,6 +3500,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
                                       aseqranges,
                                       arg->bencseq,
                                       bseqranges,
+                                      karlin_altschul_stat,
                                       combinations[0],
                                       err);
       gt_diagbandseed_thread_algorithm(tinfo);
@@ -3526,6 +3536,7 @@ int gt_diagbandseed_run(const GtDiagbandseedInfo *arg,
   gt_free(stream);
 
 #endif
+  gt_karlin_altschul_stat_delete(karlin_altschul_stat);
   gt_ft_trimstat_delete(trimstat);
   return had_err;
 }
