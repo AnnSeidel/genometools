@@ -109,7 +109,7 @@ struct GtDiagbandseedInfo
           memlimit;
   unsigned int seedlength;
   GtDiagbandseedPairlisttype splt;
-  int maxmat;
+  GtUword maxmat;
   bool norev,
        nofwd,
        verify,
@@ -235,7 +235,7 @@ GtDiagbandseedInfo *gt_diagbandseed_info_new(const GtEncseq *aencseq,
                                              bool debug_seedpair,
                                              bool use_kmerfile,
                                              bool trimstat_on,
-                                             int maxmat,
+                                             GtUword maxmat,
                                              const GtDiagbandseedExtendParams
                                                *extp)
 {
@@ -815,7 +815,7 @@ typedef struct
   int shift_tab[4],
       transfer_shift,
       bits_unused_in2GtUwords;
-  int maxmat;
+  GtUword maxmat;
   GtUword amaxlen;
 } GtSeedpairlist;
 
@@ -836,7 +836,7 @@ static GtSeedpairlist *gt_seedpairlist_new(GtDiagbandseedPairlisttype splt,
                         GtUword aidx,
                         const GtSequencePartsInfo *bseqranges,
                         GtUword bidx,
-                        int maxmat,
+                        GtUword maxmat,
                         GtUword amaxlen)
 {
   GtSeedpairlist *seedpairlist = gt_malloc(sizeof *seedpairlist);
@@ -2073,7 +2073,7 @@ static void gt_diagbandseed_segment2maxmatches(
 
 static void gt_diagbandseed_process_segment(
              const GtDiagbandseedExtendParams *extp,
-             int maxmat,
+             GtUword maxmat,
              const GtSeqorEncseq *aseqorencseq,
              const GtSeqorEncseq *bseqorencseq,
              bool same_encseq,
@@ -2260,7 +2260,7 @@ static void gt_diagbandseed_info_qm_set(
 static void gt_diagbandseed_process_seeds_times(
                  FILE *stream,
                  bool extendgreedy,
-                 int maxmat,
+                 GtUword maxmat,
                  GtUword mlistlen,
                  GtUword extended_seeds,
                  GtUword total_process_seeds_usec,
@@ -2294,7 +2294,7 @@ static void gt_diagbandseed_process_seeds_stat(FILE *stream,
                                                GtUword mlistlen,
                                                GtUword allseqpairs,
                                                bool extendgreedy,
-                                               int maxmat)
+                                               GtUword maxmat)
 {
   GtWord total_process_seeds_usec
     = gt_timer_elapsed_usec(timer);
