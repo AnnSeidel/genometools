@@ -1337,25 +1337,14 @@ static void gt_diagbandseed_decode_seedpair(GtDiagbandseedSeedPair *seedpair,
 
   value_seqnums
     = gt_diagbandseed_bytestring2GtUword(bytestring,sizeof (GtUword));
-  if (seedpairlist->bits_values[idx_aseqnum] > 0)
-  {
-    seedpair->aseqnum = (GtDiagbandseedSeqnum)
-                        (value_seqnums >>
-                         seedpairlist->bits_left_adjust[idx_aseqnum]);
-  } else
-  {
-    seedpair->aseqnum = 0;
-  }
-  if (seedpairlist->bits_values[idx_bseqnum] > 0)
-  {
-    seedpair->bseqnum = (GtDiagbandseedSeqnum)
-                         ((value_seqnums >>
-                           seedpairlist->bits_left_adjust[idx_bseqnum]) &
-                           seedpairlist->mask_tab[idx_bseqnum]);
-  } else
-  {
-    seedpair->bseqnum = 0;
-  }
+  seedpair->aseqnum = (GtDiagbandseedSeqnum)
+                      ((value_seqnums >>
+                        seedpairlist->bits_left_adjust[idx_aseqnum]) &
+                       seedpairlist->mask_tab[idx_aseqnum]);
+  seedpair->bseqnum = (GtDiagbandseedSeqnum)
+                      ((value_seqnums >>
+                        seedpairlist->bits_left_adjust[idx_bseqnum]) &
+                       seedpairlist->mask_tab[idx_bseqnum]);
   transfer = value_seqnums & seedpairlist->transfer_mask;
   value_positions
     = gt_diagbandseed_bytestring2GtUword(bytestring + sizeof (GtUword),
@@ -1819,13 +1808,19 @@ static int gt_diagbandseed_update_dband(GtUword ndiags,
   {
     /* no overlap */
     addlength = matchlength;
+    diagband_lastpos[diagband] = bpos;
   } else
   {
     /* overlap: add positions after last counted position */
-    gt_assert(diagband_lastpos[diagband] <= bpos);
-    addlength = bpos - diagband_lastpos[diagband];
+    if (diagband_lastpos[diagband] < bpos)
+    {
+      addlength = bpos - diagband_lastpos[diagband];
+      diagband_lastpos[diagband] = bpos;
+    } else
+    {
+      addlength = 0;
+    }
   }
-  diagband_lastpos[diagband] = bpos;
   if (addlength > 0)
   {
     diagband_score[diagband] += addlength;
@@ -1882,6 +1877,12 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
                                              *process_seeds_counts)
 {
   int ret = 0;
+
+#ifdef ELEMENT2CHAINOUT
+  printf(GT_WU " " GT_WU " " GT_WU " " GT_WU "\n",apos+1-matchlength,apos,
+                                                  bpos+1-matchlength,bpos,
+                                                  matchlength);
+#endif
   if (previousmatch == NULL ||
       !gt_querymatch_overlap(previousmatch,apos,bpos,use_apos))
   {
@@ -1954,19 +1955,31 @@ static int gt_diagbandseed_compare_mems(const void *vl,const void *vr)
 {
   GtDiagbandseedMaximalmatch *l = (GtDiagbandseedMaximalmatch *) vl,
                              *r = (GtDiagbandseedMaximalmatch *) vr;
-  if (l->bpos < r->bpos)
+  GtDiagbandseedPosition lapos = l->apos + 1 - l->len,
+                         lbpos = l->bpos + 1 - l->len,
+                         rapos = r->apos + 1 - r->len,
+                         rbpos = r->bpos + 1 - r->len;
+  if (lbpos < rbpos)
   {
     return -1;
   }
-  if (l->bpos > r->bpos)
+  if (lbpos > rbpos)
   {
     return 1;
   }
-  if (l->apos < r->apos)
+  if (l->len < r->len)
+  {
+    return 1;
+  }
+  if (l->len > r->len)
   {
     return -1;
   }
-  if (l->apos > r->apos)
+  if (lapos < rapos)
+  {
+    return -1;
+  }
+  if (lapos > rapos)
   {
     return 1;
   }
