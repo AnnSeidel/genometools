@@ -1951,7 +1951,8 @@ typedef struct
 
 GT_DECLAREARRAYSTRUCT(GtDiagbandseedMaximalmatch);
 
-static int gt_diagbandseed_compare_mems(const void *vl,const void *vr)
+static int gt_diagbandseed_bstart_ldesc_compare_mems(const void *vl,
+                                                     const void *vr)
 {
   GtDiagbandseedMaximalmatch *l = (GtDiagbandseedMaximalmatch *) vl,
                              *r = (GtDiagbandseedMaximalmatch *) vr;
@@ -2043,6 +2044,7 @@ static void gt_diagbandseed_segment2maxmatches(
   const GtSeedpairPositions *current;
   GtSeedpairPositions previous;
 
+  gt_assert(segment_length > 0);
   if (segment_length == 0)
   {
     return;
@@ -2083,15 +2085,12 @@ static void gt_diagbandseed_segment2maxmatches(
       previous = *current;
     }
   }
-  if (segment_length > 0)
-  {
-    localmatchcount += gt_diagbandseed_process_mem(memstore,
-                                                   fpout,
-                                                   amaxlen,
-                                                   &previous,
-                                                   previous_matchlength,
-                                                   userdefinedleastlength);
-  }
+  localmatchcount += gt_diagbandseed_process_mem(memstore,
+                                                 fpout,
+                                                 amaxlen,
+                                                 &previous,
+                                                 previous_matchlength,
+                                                 userdefinedleastlength);
   process_seeds_counts->countmatches += localmatchcount;
   if (process_seeds_counts->maxmatchespersegment < localmatchcount)
   {
@@ -2102,7 +2101,7 @@ static void gt_diagbandseed_segment2maxmatches(
     qsort(memstore->spaceGtDiagbandseedMaximalmatch,
           memstore->nextfreeGtDiagbandseedMaximalmatch,
           sizeof *memstore->spaceGtDiagbandseedMaximalmatch,
-          gt_diagbandseed_compare_mems);
+          gt_diagbandseed_bstart_ldesc_compare_mems);
   }
 }
 
@@ -2152,27 +2151,30 @@ static void gt_diagbandseed_reset_counters(
   } else
   {
     GtUword idx;
-    gt_assert((seedstore == NULL && memstore != NULL) ||
-              (seedstore != NULL && memstore == NULL));
 
-    for (idx = 0; idx < segment_length; idx++)
+    if (seedstore != NULL)
     {
-      GtDiagbandseedPosition apos, bpos;
-      GtUword diagband;
-
-      if (seedstore != NULL)
+      for (idx = 0; idx < segment_length; idx++)
       {
-        apos = seedstore[idx].apos;
-        bpos = seedstore[idx].bpos;
-      } else
-      {
-        apos = memstore[idx].apos;
-        bpos = memstore[idx].bpos;
+        GtUword diagband = GT_DIAGBANDSEED_DIAGONALBAND(amaxlen,
+                                                        seedstore[idx].apos,
+                                                        seedstore[idx].bpos,
+                                                        logdiagbandwidth);
+        diagband_score[diagband] = 0;
+        diagband_lastpos[diagband] = 0;
       }
-      diagband = GT_DIAGBANDSEED_DIAGONALBAND(amaxlen,apos,bpos,
-                                              logdiagbandwidth);
-      diagband_score[diagband] = 0;
-      diagband_lastpos[diagband] = 0;
+    } else
+    {
+      gt_assert(memstore != NULL);
+      for (idx = 0; idx < segment_length; idx++)
+      {
+        GtUword diagband = GT_DIAGBANDSEED_DIAGONALBAND(amaxlen,
+                                                        memstore[idx].apos,
+                                                        memstore[idx].bpos,
+                                                        logdiagbandwidth);
+        diagband_score[diagband] = 0;
+        diagband_lastpos[diagband] = 0;
+      }
     }
   }
 }
