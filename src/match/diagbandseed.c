@@ -39,6 +39,7 @@
 #include "core/intbits.h"
 #include "core/qsort-ulong.h"
 #include "core/radix_sort.h"
+#include "core/log_api.h"
 #include "match/chain2dim.h"
 #include "match/declare-readfunc.h"
 #include "match/kmercodes.h"
@@ -47,6 +48,7 @@
 #include "match/seed-extend.h"
 #include "match/sfx-mappedstr.h"
 #include "match/sfx-suffixer.h"
+#include "match/rectangle-store.h"
 #include "match/diagbandseed.h"
 
 #ifdef GT_THREADS_ENABLED
@@ -1844,7 +1846,8 @@ typedef struct
           failedmatches,
           seqpairs_with_minsegment,
           maxmatchespersegment,
-          total_extension_time_usec;
+          total_extension_time_usec,
+          filteredbydiagonalscore;
   bool withtiming;
 } GtDiagbandseedCounts;
 
@@ -1859,7 +1862,78 @@ typedef const GtQuerymatch *(*GtExtendRelativeCoordsFunc)(void *,
                                                           GtUword,
                                                           GtReadmode);
 
-static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
+static bool gt_diagbandseed_has_overlap_with_previous_match(
+     const GtArrayGtDiagbandseedRectangle *previous_extensions,
+     const GtQuerymatch *previousmatch,
+     GtUword apos,
+     GtUword bpos,
+     GtUword matchlength,
+     bool use_apos,
+     bool debug)
+{
+  if (debug)
+  {
+    printf("# overlap of " GT_WU " " GT_WU " " GT_WU " " GT_WU " "
+                           GT_WU " " GT_WU " " GT_WU " " GT_WU "?\n",
+           apos + 1 - matchlength,apos,bpos + 1 - matchlength,bpos,
+           gt_querymatch_dbstart(previousmatch),
+           gt_querymatch_dbstart(previousmatch) +
+           gt_querymatch_dblen(previousmatch) - 1,
+           gt_querymatch_querystart_fwdstrand(previousmatch),
+           gt_querymatch_querystart_fwdstrand(previousmatch) +
+           gt_querymatch_querylen(previousmatch) - 1);
+  }
+  if (use_apos)
+  {
+    GtDiagbandseedRectangle maxmatch;
+
+    maxmatch.a_start = apos + 1 - matchlength;
+    maxmatch.a_end = apos;
+    maxmatch.b_start = bpos + 1 - matchlength;
+    maxmatch.b_end = bpos;
+
+    if (debug)
+    {
+      gt_rectangle_store_show(previous_extensions);
+    }
+    if (gt_rectangle_overlap(previous_extensions,&maxmatch))
+    {
+      if (debug)
+      {
+        printf("# overlap with previous_ext (both dim) => return true\n");
+      }
+      return true;
+    } else
+    {
+      if (debug)
+      {
+        printf("# not overlap with previous_ext (both dim) => return false\n");
+      }
+      return false;
+    }
+  } else
+  {
+    if (gt_querymatch_overlap(previousmatch,apos,bpos,false))
+    {
+      if (debug)
+      {
+        printf("# overlap with previous (bpos) => return true\n");
+      }
+      return true;
+    } else
+    {
+      if (debug)
+      {
+        printf("# not overlap with previous (bpos) => return false\n");
+      }
+      return false;
+    }
+  }
+}
+
+static int gt_diagbandseed_possibly_extend(const GtArrayGtDiagbandseedRectangle
+                                             *previous_extensions,
+                                           const GtQuerymatch *previousmatch,
                                            bool use_apos,
                                            GtUword aseqnum,
                                            GtUword apos,
@@ -1878,7 +1952,8 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
                                            GtExtendRelativeCoordsFunc
                                              extend_relative_coords_function,
                                            GtDiagbandseedCounts
-                                             *process_seeds_counts)
+                                             *process_seeds_counts,
+                                           bool debug)
 {
   int ret = 0;
 
@@ -1887,8 +1962,17 @@ static int gt_diagbandseed_possibly_extend(const GtQuerymatch *previousmatch,
                                                   bpos+1-matchlength,bpos,
                                                   matchlength);
 #endif
+  if (debug)
+  {
+    printf("# %s with previousmatch%sNULL\n",__func__,
+            previousmatch == NULL ? "==" : "!=");
+  }
   if (previousmatch == NULL ||
-      !gt_querymatch_overlap(previousmatch,apos,bpos,use_apos))
+      !gt_diagbandseed_has_overlap_with_previous_match(previous_extensions,
+                                                       previousmatch,apos,bpos,
+                                                       matchlength,
+                                                       use_apos,
+                                                       debug))
   {
     /* extend seed */
     const GtQuerymatch *querymatch;
@@ -2311,7 +2395,8 @@ static void gt_diagbandseed_process_segment(
              GtExtendRelativeCoordsFunc extend_relative_coords_function,
              GtDiagbandseedCounts *process_seeds_counts,
              GtSegmentRejectFunc segment_reject_func,
-             GtSegmentRejectInfo *segment_reject_info)
+             GtSegmentRejectInfo *segment_reject_info,
+             bool debug)
 {
   bool found_selected = false;
 
@@ -2320,6 +2405,7 @@ static void gt_diagbandseed_process_segment(
   {
     bool haspreviousmatch = false;
     GtUword idx, matchlength = seedlength;
+    GtArrayGtDiagbandseedRectangle *previous_extensions = NULL;
 
     if (maxmat_compute)
     {
@@ -2347,6 +2433,10 @@ static void gt_diagbandseed_process_segment(
                                             memstore);
       segment_length = memstore->nextfreeGtDiagbandseedMaximalmatch;
     }
+    if (extp->use_apos)
+    {
+      previous_extensions = gt_rectangle_store_new();
+    }
     for (idx = 0; idx < segment_length; idx++)
     {
       GtDiagbandseedPosition apos, bpos;
@@ -2361,6 +2451,11 @@ static void gt_diagbandseed_process_segment(
       {
         apos = segment_positions[idx].apos;
         bpos = segment_positions[idx].bpos;
+      }
+      if (debug)
+      {
+        printf("# apos=%u,bpos=%u,matchlength=" GT_WU "\n",
+               apos,bpos,matchlength);
       }
       diagband = GT_DIAGBANDSEED_DIAGONALBAND(amaxlen, apos, bpos,
                                               extp->logdiagbandwidth);
@@ -2382,6 +2477,7 @@ static void gt_diagbandseed_process_segment(
           break;
         }
         ret = gt_diagbandseed_possibly_extend(
+                       previous_extensions,
                        haspreviousmatch ? info_querymatch->querymatchspaceptr
                                         : NULL,
                        extp->use_apos,
@@ -2400,7 +2496,8 @@ static void gt_diagbandseed_process_segment(
                        query_readmode,
                        extend_relative_coords_function,
                        process_seeds_counts->withtiming ? process_seeds_counts
-                                                        : NULL);
+                                                        : NULL,
+                       debug);
         if (ret >= 1)
         {
           process_seeds_counts->extended_seeds++;
@@ -2408,6 +2505,35 @@ static void gt_diagbandseed_process_segment(
         if (ret >= 2)
         {
           haspreviousmatch = true;
+          if (extp->use_apos)
+          {
+            GtDiagbandseedRectangle newrectangle;
+
+            gt_assert(info_querymatch->querymatchspaceptr != NULL);
+            newrectangle.a_start
+              = gt_querymatch_dbstart(info_querymatch->querymatchspaceptr);
+            newrectangle.a_end = newrectangle.a_start +
+                                 gt_querymatch_dblen(info_querymatch->
+                                                     querymatchspaceptr) - 1;
+            newrectangle.b_start
+            /* XXX: think about whether is correct to work on forward coords. */
+              = gt_querymatch_querystart_fwdstrand(info_querymatch->
+                                                   querymatchspaceptr);
+            newrectangle.b_end = newrectangle.b_start +
+                                 gt_querymatch_querylen(info_querymatch->
+                                                        querymatchspaceptr) - 1;
+            if (debug)
+            {
+              printf("# add rectangle (%u,%u) (%u,%u) from seed (%u,%u,"
+                     GT_WU ")\n",
+                      newrectangle.a_start,
+                      newrectangle.a_end,
+                      newrectangle.b_start,
+                      newrectangle.b_end,
+                      apos,bpos,matchlength);
+            }
+            gt_rectangle_store_add(previous_extensions,&newrectangle);
+          }
           if (ret == 2)
           {
             process_seeds_counts->failedmatches++;
@@ -2422,7 +2548,22 @@ static void gt_diagbandseed_process_segment(
             break;
           }
         }
+      } else
+      {
+        process_seeds_counts->filteredbydiagonalscore++;
+        if (debug)
+        {
+          printf("# filtered as diagonal score " GT_WU " < " GT_WU "\n",
+                 (GtUword) MAX(diagband_score[diagband + 1],
+                               diagband_score[diagband - 1])
+                            + (GtUword) diagband_score[diagband],
+                 extp->mincoverage);
+        }
       }
+    }
+    if (extp->use_apos)
+    {
+      gt_rectangle_store_delete(previous_extensions);
     }
   }
   if (found_selected)
@@ -2540,8 +2681,13 @@ static void gt_diagbandseed_process_seeds_stat(FILE *stream,
   fprintf(stream,"# total number of seeds: " GT_WU,mlistlen);
   if (!maxmat_show)
   {
-    fprintf(stream,"; " GT_WU ", i.e. %.2f%% of all seeds were selected"
+    fprintf(stream,"; " GT_WU ", i.e. %.2f%% of all seeds were filtered by "
+                   " diagonal score"
+                   "; " GT_WU ", i.e. %.2f%% of all seeds were selected"
                    "; " GT_WU ", i.e. %.2f%% of all seeds were extended)\n",
+            process_seeds_counts->filteredbydiagonalscore,
+            100.0 * (double) process_seeds_counts->filteredbydiagonalscore/
+                             mlistlen,
             process_seeds_counts->selected_seeds,
             100.0 * (double) process_seeds_counts->selected_seeds/mlistlen,
             process_seeds_counts->extended_seeds,
@@ -2812,11 +2958,15 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                 ndiags = 1 + ((seedpairlist->amaxlen + bmaxlen)
                              >> extp->logdiagbandwidth),
                 minsegmentlen = (extp->mincoverage - 1) / seedlength + 1;
+  bool debug = false;
   GtUword diagbands_used;
   GtTimer *timer = NULL;
   GtDiagbandSeedPlainSequence plainsequence_info;
-  GtDiagbandseedCounts process_seeds_counts = {0,0,0,0,0,0,0};
-
+  GtDiagbandseedCounts process_seeds_counts = {0,0,0,0,0,0,0,0};
+  if (gt_log_enabled())
+  {
+    debug = true;
+  }
   process_seeds_counts.withtiming = verbose;
   info_querymatch.karlin_altschul_stat = karlin_altschul_stat;
   gt_assert(extp->mincoverage >= seedlength && minsegmentlen >= 1);
@@ -2969,7 +3119,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                       extend_relative_coords_function,
                                       &process_seeds_counts,
                                       segment_reject_func,
-                                      segment_reject_info);
+                                      segment_reject_info,
+                                      debug);
     }
   } else
   {
@@ -3077,7 +3228,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                         extend_relative_coords_function,
                                         &process_seeds_counts,
                                         segment_reject_func,
-                                        segment_reject_info);
+                                        segment_reject_info,
+                                        debug);
       }
     } else
     {
@@ -3196,7 +3348,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
                                         extend_relative_coords_function,
                                         &process_seeds_counts,
                                         segment_reject_func,
-                                        segment_reject_info);
+                                        segment_reject_info,
+                                        debug);
       }
     }
   }
