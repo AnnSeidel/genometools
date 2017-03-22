@@ -6,13 +6,11 @@
 #include <ctype.h>
 #include "core/assert_api.h"
 #include "core/arraydef.h"
-#include "match/ft-polish.h"
+#include "core/minmax.h"
 #include "core/chardef.h"
 #include "core/divmodmul.h"
-#include "core/minmax.h"
-#include "core/types_api.h"
-#include "core/ma_api.h"
-#include "ft-eoplist.h"
+#include "match/ft-polish.h"
+#include "match/ft-eoplist.h"
 
 #define DELETION_CHAR    'D'
 #define INSERTION_CHAR   'I'
@@ -45,12 +43,10 @@ struct GtEoplist
                                              countdeletions, countinsertions;
   uint8_t *spaceuint8_t;
   const GtUchar *useq, *vseq;
-  GtUword ulen, vlen;
-  bool withpolcheck, seed_display;
+  GtUword ustart, ulen, vstart, vlen;
+  bool withpolcheck, pol_info_out, display_seed_in_alignment;
   GtUword useedoffset, seedlen;
-#ifndef OUTSIDE_OF_GT
-  const Polishing_info *pol_info;
-#endif
+  const GtFtPolishing_info *pol_info;
 };
 
 void gt_eoplist_reset(GtEoplist *eoplist)
@@ -74,12 +70,11 @@ GtEoplist *gt_eoplist_new(void)
   gt_assert(eoplist != NULL);
   eoplist->allocateduint8_t = 0;
   eoplist->spaceuint8_t = NULL;
-  eoplist->seed_display = false;
+  eoplist->display_seed_in_alignment = false;
   eoplist->withpolcheck = false;
+  eoplist->pol_info_out = false;
   eoplist->useedoffset = eoplist->seedlen = 0;
-#ifndef OUTSIDE_OF_GT
   eoplist->pol_info = NULL;
-#endif
   gt_eoplist_reset(eoplist);
   return eoplist;
 }
@@ -189,26 +184,6 @@ void gt_eoplist_delete(GtEoplist *eoplist)
 #define FT_EOPCODE_MISMATCH       253
 #define FT_EOPCODE_DELETION       254
 #define FT_EOPCODE_INSERTION      255
-
-#ifdef OUTSIDE_OF_GT
-#define GT_CHECKARRAYSPACE(A,TYPE,L)\
-        do {\
-          if ((A)->nextfree##TYPE >= (A)->allocated##TYPE)\
-          {\
-            (A)->allocated##TYPE += L;\
-            (A)->space##TYPE = (TYPE *) gt_realloc((A)->space##TYPE,\
-                                                   sizeof (TYPE) *\
-                                                   (A)->allocated##TYPE);\
-          }\
-          gt_assert((A)->space##TYPE != NULL);\
-        } while (false)
-
-#define GT_STOREINARRAY(A,TYPE,L,VAL)\
-        do {\
-          GT_CHECKARRAYSPACE(A,TYPE,L);\
-          (A)->space##TYPE[(A)->nextfree##TYPE++] = VAL;\
-        } while (false)
-#endif
 
 #define GT_EOPLIST_PUSH(EOPLIST,EOP)\
         gt_assert((EOPLIST) != NULL);\
@@ -325,8 +300,7 @@ struct GtEoplistReader
 void gt_eoplist_reader_reset(GtEoplistReader *eoplist_reader,
                              const GtEoplist *eoplist)
 {
-  gt_assert(eoplist != NULL);
-  gt_assert(eoplist_reader != NULL);
+  gt_assert(eoplist != NULL && eoplist_reader != NULL);
   if (eoplist->spaceuint8_t == NULL || eoplist->nextfreeuint8_t == 0)
   {
     eoplist_reader->currenteop = NULL;
@@ -341,17 +315,22 @@ void gt_eoplist_reader_reset(GtEoplistReader *eoplist_reader,
                             = eoplist_reader->repcount = 0;
 }
 
+static size_t gt_eoplist_outbuffer_size(unsigned int width)
+{
+  return 3 * width;
+}
+
 void gt_eoplist_reader_reset_width(GtEoplistReader *eoplist_reader,
                                    unsigned int width)
 {
   if (eoplist_reader->width < width)
   {
-    eoplist_reader->width = width;
     eoplist_reader->outbuffer = gt_realloc(eoplist_reader->outbuffer,
                                            sizeof *eoplist_reader->outbuffer *
-                                           3 * (width+1));
+                                           gt_eoplist_outbuffer_size(width));
     gt_assert(eoplist_reader->outbuffer != NULL);
   }
+  eoplist_reader->width = width;
 }
 
 GtEoplistReader *gt_eoplist_reader_new(const GtEoplist *eoplist)
@@ -364,10 +343,11 @@ GtEoplistReader *gt_eoplist_reader_new(const GtEoplist *eoplist)
   eoplist_reader->width = 0;
   eoplist_reader->outbuffer = NULL;
   eoplist_reader->distinguish_mismatch_match = false;
-  eoplist_reader->width = 70;
-  eoplist_reader->outbuffer = gt_realloc(eoplist_reader->outbuffer,
-                                         sizeof *eoplist_reader->outbuffer *
-                                         3 * (eoplist_reader->width+1));
+  eoplist_reader->width = 60;
+  eoplist_reader->outbuffer
+    = gt_realloc(eoplist_reader->outbuffer,
+                 sizeof *eoplist_reader->outbuffer *
+                 gt_eoplist_outbuffer_size(eoplist_reader->width));
   gt_eoplist_reader_reset(eoplist_reader,eoplist);
   return eoplist_reader;
 }
@@ -620,39 +600,83 @@ void gt_eoplist_show_plain(const GtEoplist *eoplist,FILE *fp)
   fputc('\n',fp);
 }
 
-static unsigned int gt_eoplist_show_advance(unsigned int pos,
+void gt_eoplist_show_cigar(GtEoplistReader *eoplist_reader,FILE *fp)
+{
+  GtCigarOp co;
+
+  while (gt_eoplist_reader_next_cigar(&co,eoplist_reader))
+  {
+    fprintf(fp,"" GT_WU "%c",co.iteration,
+            gt_eoplist_pretty_print(co.eoptype,true));
+  }
+}
+
+static void gt_eoplist_write_lines(int numwidth,
+                                   unsigned int width,
+                                   const GtUchar *topbuf,
+                                   GtUword top_start_pos,
+                                   GtUword top_end_pos,
+                                   const GtUchar *midbuf,
+                                   const GtUchar *lowbuf,
+                                   GtUword low_start_pos,
+                                   GtUword low_end_pos,
+                                   FILE *fp)
+{
+  gt_assert(numwidth > 0);
+  fprintf(fp,"Sbjct  %-*" GT_WUS "  ",numwidth,top_start_pos);
+  fwrite(topbuf,sizeof *topbuf,width,fp);
+  fprintf(fp,"  " GT_WU "\n%*s",top_end_pos,
+                                 (int) (numwidth + sizeof ("Sbjct") + 3),
+                                 "");
+  fwrite(midbuf,sizeof *midbuf,width,fp);
+  fprintf(fp,"\nQuery  %-*" GT_WUS "  ",numwidth,low_start_pos);
+  fwrite(lowbuf,sizeof *lowbuf,width,fp);
+  fprintf(fp,"  " GT_WU "\n\n",low_end_pos);
+}
+
+static unsigned int gt_eoplist_show_advance(int numwidth,
+                                            unsigned int pos,
                                             unsigned int width,
                                             const GtUchar *topbuf,
+                                            GtUword top_start_pos,
+                                            GtUword top_end_pos,
+                                            const GtUchar *midbuf,
+                                            const GtUchar *lowbuf,
+                                            GtUword low_start_pos,
+                                            GtUword low_end_pos,
                                             FILE *fp)
 {
   gt_assert(width > 0);
-  if (pos < width - 1)
+  if (pos + 1 < width)
   {
     return pos + 1;
   }
   gt_assert(pos == width - 1);
-  fwrite(topbuf,sizeof *topbuf,3 * (width+1),fp);
+  gt_eoplist_write_lines(numwidth, width, topbuf, top_start_pos, top_end_pos,
+                         midbuf, lowbuf, low_start_pos, low_end_pos, fp);
   return 0;
 }
 
 void gt_eoplist_set_sequences(GtEoplist *eoplist,
                               const GtUchar *useq,
+                              GtUword ustart,
                               GtUword ulen,
                               const GtUchar *vseq,
+                              GtUword vstart,
                               GtUword vlen)
 {
   gt_assert(eoplist != NULL);
   eoplist->useq = useq;
-  eoplist->vseq = vseq;
+  eoplist->ustart = ustart;
   eoplist->ulen = ulen;
+  eoplist->vseq = vseq;
+  eoplist->vstart = vstart;
   eoplist->vlen = vlen;
 }
 
 #define EOPLIST_MATCHSYMBOL    '|'
 #define EOPLIST_MISMATCHSYMBOL ' '
 #define EOPLIST_GAPSYMBOL      '-'
-
-#ifndef OUTSIDE_OF_GT
 
 #define GT_UPDATE_POSITIVE_INFO(ISMATCH)\
         if (eoplist->pol_info != NULL)\
@@ -681,10 +705,13 @@ void gt_eoplist_set_sequences(GtEoplist *eoplist,
             suffix_bits |= set_mask;\
           }\
         }
-#else
-#define GT_UPDATE_POSITIVE_INFO(ISMATCH) /* Nothing */
-#define ISSPECIAL(CC) ((CC) >= 254)
-#endif
+
+static int gt_eoplist_numwidth(const GtEoplist *eoplist)
+{
+  gt_assert(eoplist != NULL);
+  return 1 + log10((double) MAX(eoplist->ustart + eoplist->ulen - 1,
+                                eoplist->vstart + eoplist->vlen - 1));
+}
 
 void gt_eoplist_format_generic(FILE *fp,
                                const GtEoplist *eoplist,
@@ -698,7 +725,9 @@ void gt_eoplist_format_generic(FILE *fp,
   GtUword idx_u = 0, idx_v = 0, alignmentlength = 0,
           firstseedcolumn = GT_UWORD_MAX;
   GtUchar *topbuf = eoplist_reader->outbuffer, *midbuf = NULL, *lowbuf = NULL;
-#ifndef OUTSIDE_OF_GT
+  const int numwidth = gt_eoplist_numwidth(eoplist);
+  GtUword top_start_pos = eoplist->ustart,
+          low_start_pos = eoplist->vstart;
   uint64_t suffix_bits = 0, set_mask = 0;
   GtUword suffix_bits_used = 0, prefix_positive = 0, pol_size = 0,
           lastseedcolumn = GT_UWORD_MAX;
@@ -710,13 +739,9 @@ void gt_eoplist_format_generic(FILE *fp,
     pol_size = GT_MULT2(eoplist->pol_info->cut_depth);
     set_mask = ((uint64_t) 1) << (max_history - 1);
   }
-#endif
   gt_assert(eoplist_reader != NULL);
-  topbuf[eoplist_reader->width] = '\n';
-  midbuf = topbuf + eoplist_reader->width + 1;
-  midbuf[eoplist_reader->width] = '\n';
-  lowbuf = midbuf + eoplist_reader->width + 1;
-  lowbuf[eoplist_reader->width] = '\n';
+  midbuf = topbuf + eoplist_reader->width;
+  lowbuf = midbuf + eoplist_reader->width;
   gt_eoplist_reader_reset(eoplist_reader,eoplist);
   if (distinguish_mismatch_match)
   {
@@ -754,7 +779,7 @@ void gt_eoplist_format_generic(FILE *fp,
             if (eoplist->useedoffset <= idx_u &&
                 idx_u < eoplist->useedoffset + eoplist->seedlen)
             {
-              if (eoplist->seed_display)
+              if (eoplist->display_seed_in_alignment)
               {
                 midbuf[pos] = (GtUchar) '+';
               } else
@@ -765,9 +790,7 @@ void gt_eoplist_format_generic(FILE *fp,
               {
                 firstseedcolumn = alignmentlength;
               }
-#ifndef OUTSIDE_OF_GT
               lastseedcolumn = alignmentlength;
-#endif
             } else
             {
               midbuf[pos] = (GtUchar) EOPLIST_MATCHSYMBOL;
@@ -776,7 +799,22 @@ void gt_eoplist_format_generic(FILE *fp,
           {
             midbuf[pos] = (GtUchar) EOPLIST_MISMATCHSYMBOL;
           }
-          pos = gt_eoplist_show_advance(pos,eoplist_reader->width,topbuf,fp);
+          pos = gt_eoplist_show_advance(numwidth,
+                                        pos,
+                                        eoplist_reader->width,
+                                        topbuf,
+                                        top_start_pos,
+                                        eoplist->ustart + idx_u,
+                                        midbuf,
+                                        lowbuf,
+                                        low_start_pos,
+                                        eoplist->vstart + idx_v,
+                                        fp);
+          if (pos == 0)
+          {
+            top_start_pos = eoplist->ustart + idx_u + 1;
+            low_start_pos = eoplist->vstart + idx_v + 1;
+          }
           GT_UPDATE_POSITIVE_INFO(is_match);
           alignmentlength++;
           idx_u++;
@@ -796,7 +834,22 @@ void gt_eoplist_format_generic(FILE *fp,
           }
           midbuf[pos] = EOPLIST_MISMATCHSYMBOL;
           lowbuf[pos] = EOPLIST_GAPSYMBOL;
-          pos = gt_eoplist_show_advance(pos,eoplist_reader->width,topbuf,fp);
+          pos = gt_eoplist_show_advance(numwidth,
+                                        pos,
+                                        eoplist_reader->width,
+                                        topbuf,
+                                        top_start_pos,
+                                        eoplist->ustart + idx_u - 1,
+                                        midbuf,
+                                        lowbuf,
+                                        low_start_pos,
+                                        eoplist->vstart + idx_v,
+                                        fp);
+          if (pos == 0)
+          {
+            top_start_pos = eoplist->ustart + idx_u;
+            low_start_pos = eoplist->vstart + idx_v + 1;
+          }
           GT_UPDATE_POSITIVE_INFO(false);
           alignmentlength++;
         }
@@ -815,7 +868,22 @@ void gt_eoplist_format_generic(FILE *fp,
           {
             lowbuf[pos] = cc_b;
           }
-          pos = gt_eoplist_show_advance(pos,eoplist_reader->width,topbuf,fp);
+          pos = gt_eoplist_show_advance(numwidth,
+                                        pos,
+                                        eoplist_reader->width,
+                                        topbuf,
+                                        top_start_pos,
+                                        eoplist->ustart + idx_u,
+                                        midbuf,
+                                        lowbuf,
+                                        low_start_pos,
+                                        eoplist->vstart + idx_v - 1,
+                                        fp);
+          if (pos == 0)
+          {
+            top_start_pos = eoplist->ustart + idx_u + 1;
+            low_start_pos = eoplist->vstart + idx_v;
+          }
           GT_UPDATE_POSITIVE_INFO(false);
           alignmentlength++;
         }
@@ -828,15 +896,18 @@ void gt_eoplist_format_generic(FILE *fp,
   }
   if (pos > 0)
   {
-    topbuf[pos] = '\n';
-    fwrite(topbuf,sizeof *topbuf,pos+1,fp);
-    midbuf[pos] = '\n';
-    fwrite(midbuf,sizeof *midbuf,pos+1,fp);
-    lowbuf[pos] = '\n';
-    fwrite(lowbuf,sizeof *lowbuf,pos+1,fp);
+    gt_eoplist_write_lines(numwidth,
+                           pos,
+                           topbuf,
+                           top_start_pos,
+                           eoplist->ustart + idx_u,
+                           midbuf,
+                           lowbuf,
+                           low_start_pos,
+                           eoplist->vstart + idx_v,
+                           fp);
   }
-#ifndef OUTSIDE_OF_GT
-  if (eoplist->pol_info != NULL)
+  if (eoplist->pol_info != NULL && eoplist->pol_info_out)
   {
     GtUword suffix_positive;
     GtWord suffix_positive_sum = 0;
@@ -899,7 +970,6 @@ void gt_eoplist_format_generic(FILE *fp,
       fprintf(fp, "\n");
     }
   }
-#endif
 }
 
 void gt_eoplist_format_exact(FILE *fp,
@@ -910,17 +980,17 @@ void gt_eoplist_format_exact(FILE *fp,
   GtUword idx;
   unsigned int pos = 0, width;
   GtUchar *topbuf = eoplist_reader->outbuffer, *midbuf = NULL, *lowbuf = NULL;
+  const int numwidth = gt_eoplist_numwidth(eoplist);
+  GtUword top_start_pos = eoplist->ustart,
+          low_start_pos = eoplist->vstart;
 
   width = MIN(eoplist->ulen, eoplist_reader->width);
-  topbuf[width] = '\n';
-  midbuf = topbuf + width + 1;
+  midbuf = topbuf + width;
   for (idx = 0; idx < (GtUword) width; idx++)
   {
     midbuf[idx] = (GtUchar) EOPLIST_MATCHSYMBOL;
   }
-  midbuf[width] = '\n';
-  lowbuf = midbuf + width + 1;
-  lowbuf[width] = '\n';
+  lowbuf = midbuf + width;
   for (idx = 0; idx < eoplist->ulen; idx++)
   {
     GtUchar cc_a = eoplist->useq[idx];
@@ -929,16 +999,34 @@ void gt_eoplist_format_exact(FILE *fp,
       cc_a = characters[cc_a];
     }
     lowbuf[pos] = topbuf[pos] = cc_a;
-    pos = gt_eoplist_show_advance(pos,width,topbuf,fp);
+    pos = gt_eoplist_show_advance(numwidth,
+                                  pos,
+                                  width,
+                                  topbuf,
+                                  top_start_pos,
+                                  eoplist->ustart + idx,
+                                  midbuf,
+                                  lowbuf,
+                                  low_start_pos,
+                                  eoplist->vstart + idx,fp);
+    if (pos == 0)
+    {
+      top_start_pos = eoplist->ustart + idx + 1;
+      low_start_pos = eoplist->vstart + idx + 1;
+    }
   }
   if (pos > 0)
   {
-    topbuf[pos] = '\n';
-    fwrite(topbuf,sizeof *topbuf,pos+1,fp);
-    midbuf[pos] = '\n';
-    fwrite(midbuf,sizeof *midbuf,pos+1,fp);
-    lowbuf[pos] = '\n';
-    fwrite(lowbuf,sizeof *lowbuf,pos+1,fp);
+    gt_eoplist_write_lines(numwidth,
+                           pos,
+                           topbuf,
+                           top_start_pos,
+                           eoplist->ustart + idx,
+                           midbuf,
+                           lowbuf,
+                           low_start_pos,
+                           eoplist->vstart + idx,
+                           fp);
   }
 }
 
@@ -1029,10 +1117,10 @@ void gt_eoplist_verify(const GtEoplist *eoplist,
                 gt_eoplist_insertions_count(eoplist)));
 }
 
-void gt_eoplist_seed_display_set(GtEoplist *eoplist)
+void gt_eoplist_display_seed_in_alignment_set(GtEoplist *eoplist)
 {
   gt_assert(eoplist != NULL);
-  eoplist->seed_display = true;
+  eoplist->display_seed_in_alignment = true;
 }
 
 void gt_eoplist_set_seedoffset(GtEoplist *eoplist,
@@ -1043,13 +1131,13 @@ void gt_eoplist_set_seedoffset(GtEoplist *eoplist,
   eoplist->seedlen = seedlen;
 }
 
-#ifndef OUTSIDE_OF_GT
 void gt_eoplist_polished_ends(GtEoplist *eoplist,
-                              const Polishing_info *pol_info,
-                              bool withpolcheck)
+                              const GtFtPolishing_info *pol_info,
+                              bool withpolcheck,
+                              bool pol_info_out)
 {
   gt_assert(eoplist != NULL);
   eoplist->pol_info = pol_info;
   eoplist->withpolcheck = withpolcheck;
+  eoplist->pol_info_out = pol_info_out;
 }
-#endif

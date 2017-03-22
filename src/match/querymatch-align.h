@@ -19,27 +19,39 @@
 #define QUERYMATCH_ALIGN_H
 
 #include "core/types_api.h"
+#include "core/error_api.h"
 #include "match/ft-front-prune.h"
 #include "match/seq_or_encseq.h"
+#include "match/querymatch-display.h"
 
 typedef struct GtQuerymatchoutoptions GtQuerymatchoutoptions;
 
 GtQuerymatchoutoptions *gt_querymatchoutoptions_new(bool generatealignment,
                                                     bool showeoplist,
-                                                    GtUword alignmentwidth);
+                                                    const
+                                                     GtSeedExtendDisplayFlag
+                                                      *display_flag,
+                                                    const char *indexname,
+                                                    GtError *err);
+
+void gt_querymatchoutoptions_reset(GtQuerymatchoutoptions
+                                     *querymatchoutoptions);
 
 void gt_querymatchoutoptions_extend(
                   GtQuerymatchoutoptions *querymatchoutoptions,
                   GtUword errorpercentage,
+                  double evalue_threshold,
                   GtUword maxalignedlendifference,
                   GtUword history,
                   GtUword perc_mat_history,
-                  GtExtendCharAccess extend_char_access,
+                  GtExtendCharAccess a_extend_char_access,
+                  GtExtendCharAccess b_extend_char_access,
+                  bool cam_generic,
                   bool weakends,
                   GtUword sensitivity,
                   double matchscore_bias,
                   bool always_polished_ends,
-                  unsigned int display_flag);
+                  const GtSeedExtendDisplayFlag *display_flag);
 
 void gt_querymatchoutoptions_for_align_only(
                   GtQuerymatchoutoptions *querymatchoutoptions,
@@ -47,7 +59,7 @@ void gt_querymatchoutoptions_for_align_only(
                   double matchscore_bias,
                   GtUword history_size,
                   bool always_polished_ends,
-                  unsigned int display_flag);
+                  const GtSeedExtendDisplayFlag *display_flag);
 
 void gt_querymatchoutoptions_delete(
         GtQuerymatchoutoptions *querymatchoutoptions);
@@ -55,13 +67,14 @@ void gt_querymatchoutoptions_delete(
 bool gt_querymatchoutoptions_alignment_prepare(
                                      GtQuerymatchoutoptions
                                        *querymatchoutoptions,
-                                     const GtEncseq *encseq,
-                                     const GtSeqorEncseq *query,
+                                     const GtSeqorEncseq *dbes,
+                                     const GtSeqorEncseq *queryes,
+                                     GtUword db_seqstartpos,
+                                     GtUword dbstart,
+                                     GtUword dblen,
                                      GtReadmode query_readmode,
                                      GtUword query_seqstartpos,
                                      GtUword query_totallength,
-                                     GtUword dbstart,
-                                     GtUword dblen,
                                      GtUword querystart,
                                      GtUword querystart_fwdstrand,
                                      GtUword querylen,
@@ -73,8 +86,8 @@ bool gt_querymatchoutoptions_alignment_prepare(
                                      bool greedyextension);
 
 void gt_frontprune2eoplist(GtQuerymatchoutoptions *querymatchoutoptions,
-                           const GtEncseq *encseq,
-                           const GtSeqorEncseq *query,
+                           const GtSeqorEncseq *dbes,
+                           const GtSeqorEncseq *queryes,
                            GtReadmode query_readmode,
                            GtUword query_seqstartpos,
                            GtUword query_totallength,
@@ -98,5 +111,8 @@ typedef struct
 
 const GtSeqpaircoordinates *gt_querymatchoutoptions_correction_get(
               const GtQuerymatchoutoptions *querymatchoutoptions);
+
+void gt_querymatch_column_header_output(const GtSeedExtendDisplayFlag
+                                         *display_flag,FILE *stream);
 
 #endif

@@ -15,6 +15,7 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
+#include <float.h>
 #include "core/error_api.h"
 #include "core/format64.h"
 #include "core/log_api.h"
@@ -54,22 +55,20 @@ typedef struct
            reasons, the option -err is used, then the minidentity contains the
            error rate, a value in the range from 1 to 30. */
           maxalignedlendifference, /* maxfrontdist */
-          extendgreedy, /* determines which of the tables in
+          extendgreedy; /* determines which of the tables in
                            seed-extend-params.h is used */
-          alignmentwidth; /* 0 for no alignment display and otherwidth number
-                             of columns of alignment per line displayed. */
   bool scanfile, beverbose, forward, reverse, reverse_complement, searchspm,
-       check_extend_symmetry, silent, trimstat, noxpolish, verify_alignment;
-  GtStr *indexname, *query_indexname, *cam_string; /* parse this using
-                                    gt_greedy_extend_char_access*/
+       check_extend_symmetry, silent, trimstat_on, noxpolish, verify_alignment;
+  GtStr *indexname, *query_indexname, *cam_string;
   GtStrArray *query_files;
   GtOption *refforwardoption,
            *refseedlengthoption,
            *refuserdefinedleastlengthoption,
            *refextendxdropoption,
            *refextendgreedyoption,
-           *refalignmentoutoption;
+           *ref_op_evalue;
   GtStrArray *display_args;
+  double evalue_threshold;
 } GtMaxpairsoptions;
 
 static int gt_exact_selfmatch_with_output(void *info,
@@ -82,8 +81,9 @@ static int gt_exact_selfmatch_with_output(void *info,
   GtUword queryseqnum, queryseqstartpos, query_totallength, dbseqnum,
           dbseqstartpos, dbseqlen;
   const GtEncseq *encseq;
-  GtProcessinfo_and_querymatchspaceptr *processinfo_and_querymatchspaceptr
+  GtProcessinfo_and_querymatchspaceptr *info_querymatch
     = (GtProcessinfo_and_querymatchspaceptr *) info;
+  GtSeqorEncseq dbes, queryes;
 
   gt_assert(pos1 < pos2 && genericencseq != NULL && genericencseq->hasencseq);
   encseq = genericencseq->seqptr.encseq;
@@ -105,10 +105,10 @@ static int gt_exact_selfmatch_with_output(void *info,
     query_totallength = 0;
   }
   gt_assert(pos2 >= queryseqstartpos);
-  if (gt_querymatch_complete(processinfo_and_querymatchspaceptr->
-                                  querymatchspaceptr,
-                             processinfo_and_querymatchspaceptr->
-                                  karlin_altschul_stat,
+  GT_SEQORENCSEQ_INIT_ENCSEQ(&dbes,encseq);
+  GT_SEQORENCSEQ_INIT_ENCSEQ(&queryes,encseq);
+  if (gt_querymatch_complete(info_querymatch->querymatchspaceptr,
+                             info_querymatch->karlin_altschul_stat,
                              len,
                              pos1,
                              dbseqnum,
@@ -121,16 +121,15 @@ static int gt_exact_selfmatch_with_output(void *info,
                              (uint64_t) queryseqnum,
                              len,
                              pos2 - queryseqstartpos,
-                             encseq,
-                             NULL,
+                             &dbes,
+                             &queryes,
                              query_totallength,
                              pos1,
                              pos2,
                              len,
                              false))
   {
-    gt_querymatch_prettyprint(processinfo_and_querymatchspaceptr->
-                                         querymatchspaceptr);
+    gt_querymatch_prettyprint(info_querymatch->querymatchspaceptr);
   }
   return 0;
 }
@@ -211,7 +210,7 @@ static void gt_repfind_arguments_delete(void *tool_arguments)
   gt_option_delete(arguments->refuserdefinedleastlengthoption);
   gt_option_delete(arguments->refextendxdropoption);
   gt_option_delete(arguments->refextendgreedyoption);
-  gt_option_delete(arguments->refalignmentoutoption);
+  gt_option_delete(arguments->ref_op_evalue);
   gt_free(arguments);
 }
 
@@ -226,8 +225,8 @@ static GtOptionParser *gt_repfind_option_parser_new(void *tool_arguments)
            *maxalilendiffoption, *leastlength_option, *char_access_mode_option,
            *check_extend_symmetry_option, *xdropbelowoption, *historyoption,
            *percmathistoryoption, *errorpercentageoption, *optiontrimstat,
-           *withalignmentoption,
-           *optionnoxpolish, *verify_alignment_option, *option_query_indexname;
+           *optionnoxpolish, *verify_alignment_option, *option_query_indexname,
+           *op_evalue;
   GtMaxpairsoptions *arguments = tool_arguments;
 
   op = gt_option_parser_new("[options] -ii indexname",
@@ -360,18 +359,6 @@ static GtOptionParser *gt_repfind_option_parser_new(void *tool_arguments)
   gt_option_parser_add_option(op, percmathistoryoption);
   gt_option_is_development_option(percmathistoryoption);
 
-  withalignmentoption
-    = gt_option_new_uword_min("a",
-                              "show alignments/sequences for exact matches "
-                              "(optional argument is number of columns per "
-                              "line)",
-                              &arguments->alignmentwidth,
-                              70,
-                              20);
-  gt_option_argument_is_optional(withalignmentoption);
-  gt_option_parser_add_option(op, withalignmentoption);
-  arguments->refalignmentoutoption = gt_option_ref(withalignmentoption);
-
   option = gt_option_new_string("ii",
                                 "Specify input index",
                                 arguments->indexname, NULL);
@@ -380,7 +367,8 @@ static GtOptionParser *gt_repfind_option_parser_new(void *tool_arguments)
 
   char_access_mode_option = gt_option_new_string("cam",
                                                  gt_cam_extendgreedy_comment(),
-                                                 arguments->cam_string,"");
+                                                 arguments->cam_string,
+                                                 "any,any");
   gt_option_parser_add_option(op, char_access_mode_option);
   gt_option_is_development_option(char_access_mode_option);
 
@@ -389,11 +377,21 @@ static GtOptionParser *gt_repfind_option_parser_new(void *tool_arguments)
   gt_option_parser_add_option(op, option);
   gt_option_is_development_option(option);
 
-  /* -display */
-  option = gt_option_new_string_array("display",
+  /* -outfmt */
+  option = gt_option_new_string_array("outfmt",
                                       gt_querymatch_display_help(),
                                       arguments->display_args);
   gt_option_parser_add_option(op, option);
+
+  /* -evalue */
+  op_evalue = gt_option_new_double("evalue","switch on evalue filtering of "
+                                            "matches (optional argument "
+                                            "specifies evalue threshold)",
+                                   &arguments->evalue_threshold,
+                                   10.0);
+  gt_option_parser_add_option(op, op_evalue);
+  gt_option_argument_is_optional(op_evalue);
+  arguments->ref_op_evalue = gt_option_ref(op_evalue);
 
   optionnoxpolish
     = gt_option_new_bool("noxpolish","do not polish X-drop extensions",
@@ -408,7 +406,7 @@ static GtOptionParser *gt_repfind_option_parser_new(void *tool_arguments)
   gt_option_is_development_option(verify_alignment_option);
 
   optiontrimstat = gt_option_new_bool("trimstat","show trimming statistics",
-                                      &arguments->trimstat, false);
+                                      &arguments->trimstat_on, false);
   gt_option_parser_add_option(op, optiontrimstat);
   gt_option_is_development_option(optiontrimstat);
 
@@ -467,15 +465,11 @@ static GtOptionParser *gt_repfind_option_parser_new(void *tool_arguments)
   gt_option_exclude(reverse_complementoption,spmoption);
   gt_option_exclude(extendgreedyoption,extendxdropoption);
   gt_option_exclude(errorpercentageoption,minidentityoption);
-  gt_option_exclude(withalignmentoption,sampleoption);
-  gt_option_exclude(withalignmentoption,spmoption);
-  gt_option_exclude(optionnoxpolish,withalignmentoption);
   gt_option_imply(xdropbelowoption,extendxdropoption);
   gt_option_imply(historyoption,extendgreedyoption);
   gt_option_imply(maxalilendiffoption,extendgreedyoption);
   gt_option_imply(percmathistoryoption,extendgreedyoption);
   gt_option_imply(optiontrimstat,extendgreedyoption);
-  gt_option_imply(verify_alignment_option,withalignmentoption);
   gt_option_imply(optionnoxpolish,extendxdropoption);
   gt_option_imply_either_2(seedlengthoption,extendxdropoption,
                            extendgreedyoption);
@@ -519,6 +513,10 @@ static int gt_repfind_arguments_check(GT_UNUSED int rest_argc,
       }
     }
   }
+  if (!gt_option_is_set(arguments->ref_op_evalue))
+  {
+    arguments->evalue_threshold = DBL_MAX;
+  }
   return 0;
 }
 
@@ -531,12 +529,12 @@ static int gt_generic_extend_selfmatch_xdrop_with_output(
                                            GtError *err)
 {
   gt_assert(genericencseq != NULL && genericencseq->hasencseq);
-  return gt_xdrop_extend_selfmatch_with_output(info,
-                                               genericencseq->seqptr.encseq,
-                                               len,
-                                               pos1,
-                                               pos2,
-                                               err);
+  return gt_rf_xdrop_extend_selfmatch_with_output(info,
+                                                  genericencseq->seqptr.encseq,
+                                                  len,
+                                                  pos1,
+                                                  pos2,
+                                                  err);
 }
 
 static int gt_generic_simplegreedyselfmatchoutput(
@@ -548,18 +546,19 @@ static int gt_generic_simplegreedyselfmatchoutput(
                                            GtError *err)
 {
   gt_assert(genericencseq != NULL && genericencseq->hasencseq);
-  return gt_greedy_extend_selfmatch_with_output(processinfo,
-                                                genericencseq->seqptr.encseq,
-                                                len,
-                                                pos1,
-                                                pos2,
-                                                err);
+  return gt_rf_greedy_extend_selfmatch_with_output(processinfo,
+                                                   genericencseq->seqptr.encseq,
+                                                   len,
+                                                   pos1,
+                                                   pos2,
+                                                   err);
 }
 
-typedef void (*GtXdrop_extend_querymatch_func)(void *,
-                                               const GtEncseq *,
-                                               const GtQuerymatch *,
-                                               const GtSeqorEncseq *);
+typedef void (*Gt_extend_querymatch_func)(void *,
+                                          const GtEncseq *,
+                                          const GtQuerymatch *,
+                                          const GtSeqorEncseq *,
+                                          bool);
 
 static int gt_callenumquerymatches(bool selfmatch,
                                    const char *indexname,
@@ -568,9 +567,10 @@ static int gt_callenumquerymatches(bool selfmatch,
                                    GtReadmode query_readmode,
                                    unsigned int userdefinedleastlength,
                                    GtQuerymatchoutoptions *querymatchoutoptions,
-                                   GtXdrop_extend_querymatch_func eqmf,
+                                   Gt_extend_querymatch_func eqmf,
                                    void *eqmf_data,
-                                   GtKarlinAltschulStat *karlin_altschul_stat,
+                                   const GtKarlinAltschulStat
+                                      *karlin_altschul_stat,
                                    GtLogger *logger,
                                    GtError *err)
 {
@@ -638,7 +638,15 @@ static int gt_callenumquerymatches(bool selfmatch,
     int retval;
     GtSeqorEncseq query_seqorencseq;
     GtQuerymatch *exactseed = gt_querymatch_new();
+    bool same_encseq;
 
+    if (query_files == NULL || gt_str_array_size(query_files) == 0)
+    {
+      same_encseq = (suffixarray.encseq == query_encseq) ? true : false;
+    } else
+    {
+      same_encseq = false;
+    }
     if (querymatchoutoptions != NULL)
     {
       gt_querymatch_outoptions_set(exactseed,querymatchoutoptions);
@@ -665,12 +673,16 @@ static int gt_callenumquerymatches(bool selfmatch,
       query_totallength = gt_querysubstringmatchiterator_query_seqlen(qsmi);
       if (query_files == NULL || gt_str_array_size(query_files) == 0)
       {
-        query_seqorencseq.seq = NULL;
-        query_seqorencseq.encseq = query_encseq;
+        GT_SEQORENCSEQ_INIT_ENCSEQ(&query_seqorencseq,query_encseq);
       } else
       {
-        query_seqorencseq.seq = gt_querysubstringmatchiterator_query(qsmi);
-        query_seqorencseq.encseq = NULL;
+        GT_SEQORENCSEQ_INIT_SEQ(&query_seqorencseq,
+                                gt_querysubstringmatchiterator_query(qsmi),
+                                gt_querysubstringmatchiterator_desc(qsmi),
+                                query_totallength,
+                                NULL,
+                                0,
+                                true);
       }
       querystart = gt_querysubstringmatchiterator_querystart(qsmi);
       queryunitnum = gt_querysubstringmatchiterator_queryunitnum(qsmi);
@@ -690,10 +702,16 @@ static int gt_callenumquerymatches(bool selfmatch,
                            queryunitnum,
                            matchlength,
                            querystart,
-                           query_totallength);
-        eqmf(eqmf_data,suffixarray.encseq,exactseed,&query_seqorencseq);
+                           query_totallength,
+                           NULL,
+                           NULL);
+        eqmf(eqmf_data,suffixarray.encseq,exactseed,&query_seqorencseq,
+             same_encseq);
       } else
       {
+        GtSeqorEncseq dbes;
+
+        GT_SEQORENCSEQ_INIT_ENCSEQ(&dbes,suffixarray.encseq);
         if (gt_querymatch_complete(exactseed,
                                    karlin_altschul_stat,
                                    matchlength,
@@ -708,7 +726,7 @@ static int gt_callenumquerymatches(bool selfmatch,
                                    queryunitnum,
                                    matchlength,
                                    querystart,
-                                   suffixarray.encseq,
+                                   &dbes,
                                    &query_seqorencseq,
                                    query_totallength,
                                    dbstart,
@@ -746,12 +764,12 @@ static int gt_repfind_runner(int argc,
   GtXdropmatchinfo *xdropmatchinfo = NULL;
   GtGreedyextendmatchinfo *greedyextendmatchinfo = NULL;
   GtTimer *repfindtimer = NULL;
-  GtExtendCharAccess extend_char_access = GT_EXTEND_CHAR_ACCESS_ANY;
-  Polishing_info *pol_info = NULL;
+  GtExtendCharAccess cam_a = GT_EXTEND_CHAR_ACCESS_ANY,
+                     cam_b = GT_EXTEND_CHAR_ACCESS_ANY;
+  GtFtPolishing_info *pol_info = NULL;
   GtQuerymatchoutoptions *querymatchoutoptions;
-  GtProcessinfo_and_querymatchspaceptr processinfo_and_querymatchspaceptr;
-  GtXdrop_extend_querymatch_func eqmf = NULL;
-  GtEncseqMetadata* emd;
+  GtKarlinAltschulStat *karlin_altschul_stat = NULL;
+  Gt_extend_querymatch_func eqmf = NULL;
   void *eqmf_data = NULL;
   int mode;
   const int modes[] = {GT_READMODE_FORWARD,
@@ -760,7 +778,8 @@ static int gt_repfind_runner(int argc,
   const bool flags[] = {arguments->forward,
                         arguments->reverse,
                         arguments->reverse_complement};
-  unsigned int display_flag = 0;
+  GtSeedExtendDisplayFlag *display_flag = gt_querymatch_display_flag_new();
+  GtFtTrimstat *trimstat = NULL;
 
   gt_error_check(err);
   logger = gt_logger_new(arguments->beverbose, GT_LOGGER_DEFLT_PREFIX, stdout);
@@ -774,9 +793,35 @@ static int gt_repfind_runner(int argc,
     gt_error_set(err,"superfluous arguments: \"%s\"",argv[argc-1]);
     haserr = true;
   }
-  if (!haserr && !gt_option_is_set(arguments->refalignmentoutoption))
+  if (!haserr)
   {
-    arguments->alignmentwidth = 0;
+    if (gt_querymatch_display_flag_args_set(display_flag,
+                                            arguments->display_args,
+                                            err) != 0)
+    {
+      haserr = true;
+    }
+  }
+  if (!haserr)
+  {
+    if (gt_querymatch_evalue_display(display_flag) ||
+        gt_querymatch_bitscore_display(display_flag) ||
+        arguments->evalue_threshold != DBL_MAX)
+    {
+      GtEncseqMetadata *emd
+        = gt_encseq_metadata_new(gt_str_get(arguments->indexname),err);
+      if (emd == NULL)
+      {
+        haserr = true;
+      } else
+      {
+        karlin_altschul_stat = gt_karlin_altschul_stat_new_gapped(
+                                     gt_encseq_metadata_total_length(emd),
+                                     gt_encseq_metadata_num_of_sequences(emd),
+                                     NULL);
+        gt_encseq_metadata_delete(emd);
+      }
+    }
   }
   if (!haserr && gt_option_is_set(arguments->refextendxdropoption))
   {
@@ -784,6 +829,7 @@ static int gt_repfind_runner(int argc,
       = gt_xdrop_matchinfo_new(arguments->userdefinedleastlength,
                                gt_minidentity2errorpercentage(
                                             arguments->minidentity),
+                               arguments->evalue_threshold,
                                arguments->xdropbelowscore,
                                arguments->extendxdrop);
     gt_assert(xdropmatchinfo != NULL);
@@ -795,18 +841,23 @@ static int gt_repfind_runner(int argc,
   if (!haserr)
   {
     if (gt_option_is_set(arguments->refextendgreedyoption) ||
-        arguments->alignmentwidth > 0 ||
+        gt_querymatch_display_alignment(display_flag) ||
         gt_option_is_set(arguments->refextendxdropoption))
     {
-      extend_char_access
-        = gt_greedy_extend_char_access(gt_str_get(arguments->cam_string),err);
-
-      if ((int) extend_char_access == -1)
+      if (gt_greedy_extend_char_access(&cam_a,
+                                       &cam_b,
+                                       gt_str_get(arguments->cam_string),err)
+         != 0)
       {
         haserr = true;
       }
     }
   }
+  gt_querymatch_display_seedpos_relative_set(
+             display_flag,
+             cam_a == GT_EXTEND_CHAR_ACCESS_DIRECT ? true : false,
+             cam_b == GT_EXTEND_CHAR_ACCESS_DIRECT ? true : false);
+
   if (!haserr && gt_option_is_set(arguments->refextendgreedyoption))
   {
     GtUword errorpercentage = gt_minidentity2errorpercentage(
@@ -815,12 +866,15 @@ static int gt_repfind_runner(int argc,
                                             GT_DEFAULT_MATCHSCORE_BIAS,
                                             arguments->history);
     greedyextendmatchinfo
-      = gt_greedy_extend_matchinfo_new(errorpercentage,
-                                       arguments->maxalignedlendifference,
+      = gt_greedy_extend_matchinfo_new(arguments->maxalignedlendifference,
                                        arguments->history,
                                        arguments->perc_mat_history,
                                        arguments->userdefinedleastlength,
-                                       extend_char_access,
+                                       errorpercentage,
+                                       arguments->evalue_threshold,
+                                       cam_a,
+                                       cam_b,
+                                       false,
                                        arguments->extendgreedy,
                                        pol_info);
     if (arguments->check_extend_symmetry)
@@ -832,48 +886,48 @@ static int gt_repfind_runner(int argc,
     {
       gt_greedy_extend_matchinfo_silent_set(greedyextendmatchinfo);
     }
-    if (arguments->trimstat)
+    if (arguments->trimstat_on)
     {
-      gt_greedy_extend_matchinfo_trimstat_set(greedyextendmatchinfo);
+      trimstat = gt_ft_trimstat_new();
+      gt_greedy_extend_matchinfo_trimstat_set(greedyextendmatchinfo,trimstat);
     }
   }
   if (!haserr)
   {
-    if (gt_querymatch_eval_display_args(&display_flag,
-                                        arguments->display_args,
-                                        err) != 0)
-    {
-      haserr = true;
-    }
-  }
-  if (!haserr)
-  {
-    processinfo_and_querymatchspaceptr.processinfo = NULL;
-    processinfo_and_querymatchspaceptr.karlin_altschul_stat
-      = gt_karlin_altschul_stat_new_gapped();
-    if (arguments->alignmentwidth > 0 ||
+    GtEncseq *encseq_for_desc = NULL;
+    GtProcessinfo_and_querymatchspaceptr info_querymatch = {NULL,NULL,NULL};
+    info_querymatch.karlin_altschul_stat = karlin_altschul_stat;
+    if (gt_querymatch_display_alignment(display_flag) ||
         (gt_option_is_set(arguments->refextendxdropoption) &&
          !arguments->noxpolish))
     {
       querymatchoutoptions
-        = gt_querymatchoutoptions_new(true, false,arguments->alignmentwidth);
-
-      if (gt_option_is_set(arguments->refextendxdropoption) ||
-          gt_option_is_set(arguments->refextendgreedyoption))
+        = gt_querymatchoutoptions_new(true, false,display_flag,
+                                      gt_str_get(arguments->indexname),err);
+      if (querymatchoutoptions == NULL)
       {
+        haserr = true;
+      }
+      if (!haserr && (gt_option_is_set(arguments->refextendxdropoption) ||
+                      gt_option_is_set(arguments->refextendgreedyoption)))
+      {
+        const bool cam_generic = false;
+        const bool weakends = false;
         const GtUword sensitivity
           = gt_option_is_set(arguments->refextendgreedyoption)
               ? arguments->extendgreedy
               : 100;
-
         gt_querymatchoutoptions_extend(querymatchoutoptions,
                                        gt_minidentity2errorpercentage(
                                                arguments->minidentity),
+                                      arguments->evalue_threshold,
                                       arguments->maxalignedlendifference,
                                       arguments->history,
                                       arguments->perc_mat_history,
-                                      extend_char_access,
-                                      false,
+                                      cam_a,
+                                      cam_b,
+                                      cam_generic,
+                                      weakends,
                                       sensitivity,
                                       GT_DEFAULT_MATCHSCORE_BIAS,
                                       true,
@@ -883,49 +937,52 @@ static int gt_repfind_runner(int argc,
     {
       querymatchoutoptions = NULL;
     }
-    processinfo_and_querymatchspaceptr.querymatchspaceptr = gt_querymatch_new();
-    gt_querymatch_display_set(
-              processinfo_and_querymatchspaceptr.querymatchspaceptr,
-              display_flag);
-    if (querymatchoutoptions != NULL)
+    if (!haserr)
     {
-      gt_querymatch_outoptions_set(
-              processinfo_and_querymatchspaceptr.querymatchspaceptr,
-              querymatchoutoptions);
-    }
-    if (arguments->verify_alignment)
-    {
-      gt_querymatch_verify_alignment_set(
-        processinfo_and_querymatchspaceptr.querymatchspaceptr);
-    }
-    if (gt_option_is_set(arguments->refextendxdropoption))
-    {
-      eqmf = gt_xdrop_extend_querymatch_with_output;
-      processinfo_and_querymatchspaceptr.processinfo = xdropmatchinfo;
-      eqmf_data = (void *) &processinfo_and_querymatchspaceptr;
-    } else
-    {
-      if (gt_option_is_set(arguments->refextendgreedyoption))
+      info_querymatch.querymatchspaceptr = gt_querymatch_new();
+      gt_assert(display_flag != NULL);
+      gt_querymatch_display_set(info_querymatch.querymatchspaceptr,
+                                display_flag);
+      if (querymatchoutoptions != NULL)
       {
-        eqmf = gt_greedy_extend_querymatch_with_output;
-        processinfo_and_querymatchspaceptr.processinfo
-          = greedyextendmatchinfo;
-        eqmf_data = (void *) &processinfo_and_querymatchspaceptr;
+        gt_querymatch_outoptions_set(info_querymatch.querymatchspaceptr,
+                                     querymatchoutoptions);
+      }
+      if (arguments->verify_alignment)
+      {
+        gt_querymatch_verify_alignment_set(info_querymatch.querymatchspaceptr);
+      }
+      if (gt_option_is_set(arguments->refextendxdropoption))
+      {
+        eqmf = gt_rf_xdrop_extend_querymatch_with_output;
+        info_querymatch.processinfo = xdropmatchinfo;
+        eqmf_data = (void *) &info_querymatch;
+      } else
+      {
+        if (gt_option_is_set(arguments->refextendgreedyoption))
+        {
+          eqmf = gt_rf_greedy_extend_querymatch_with_output;
+          info_querymatch.processinfo = greedyextendmatchinfo;
+          eqmf_data = (void *) &info_querymatch;
+        }
+      }
+      if (gt_querymatch_seqdesc_display(display_flag))
+      {
+        GtEncseqLoader *encseq_loader = gt_encseq_loader_new();
+        gt_encseq_loader_require_des_tab(encseq_loader);
+        gt_encseq_loader_require_sds_tab(encseq_loader);
+        encseq_for_desc
+          = gt_encseq_loader_load(encseq_loader,
+                                  gt_str_get(arguments->indexname),
+                                  err);
+        gt_encseq_loader_delete(encseq_loader);
+        if (encseq_for_desc == NULL)
+        {
+          haserr = true;
+        }
       }
     }
-    emd = gt_encseq_metadata_new(gt_str_get(arguments->indexname),err);
-    if (emd == NULL)
-    {
-      haserr = true;
-    } else
-    {
-      gt_karlin_altschul_stat_add_keyvalues(
-                processinfo_and_querymatchspaceptr.karlin_altschul_stat,
-                gt_encseq_metadata_total_length(emd),
-                gt_encseq_metadata_num_of_sequences(emd));
-      gt_encseq_metadata_delete(emd);
-    }
-    if (gt_str_array_size(arguments->query_files) == 0 &&
+    if (!haserr && gt_str_array_size(arguments->query_files) == 0 &&
         gt_str_length(arguments->query_indexname) == 0)
     {
       if (arguments->samples > 0)
@@ -956,21 +1013,19 @@ static int gt_repfind_runner(int argc,
             if (gt_option_is_set(arguments->refextendxdropoption))
             {
               processmaxpairs = gt_generic_extend_selfmatch_xdrop_with_output;
-              processinfo_and_querymatchspaceptr.processinfo
-                = (void *) xdropmatchinfo;
+              info_querymatch.processinfo = (void *) xdropmatchinfo;
             } else
             {
               if (gt_option_is_set(arguments->refextendgreedyoption))
               {
                 processmaxpairs = gt_generic_simplegreedyselfmatchoutput;
-                processinfo_and_querymatchspaceptr.processinfo
-                  = (void *) greedyextendmatchinfo;
+                info_querymatch.processinfo = (void *) greedyextendmatchinfo;
               } else
               {
                 processmaxpairs = gt_exact_selfmatch_with_output;
               }
             }
-            processmaxpairsdata = (void *) &processinfo_and_querymatchspaceptr;
+            processmaxpairsdata = (void *) &info_querymatch;
           }
           if (gt_callenummaxpairs(gt_str_get(arguments->indexname),
                                   arguments->seedlength,
@@ -993,7 +1048,7 @@ static int gt_repfind_runner(int argc,
             if (flags[mode])
             {
               gt_querymatch_query_readmode_set(
-                   processinfo_and_querymatchspaceptr.querymatchspaceptr,
+                   info_querymatch.querymatchspaceptr,
                    modes[mode]);
               if (gt_callenumquerymatches(true,
                                           gt_str_get(arguments->indexname),
@@ -1004,8 +1059,7 @@ static int gt_repfind_runner(int argc,
                                           querymatchoutoptions,
                                           eqmf,
                                           eqmf_data,
-                                          processinfo_and_querymatchspaceptr.
-                                            karlin_altschul_stat,
+                                          info_querymatch.karlin_altschul_stat,
                                           logger,
                                           err) != 0)
               {
@@ -1021,9 +1075,8 @@ static int gt_repfind_runner(int argc,
       {
         if (flags[mode])
         {
-          gt_querymatch_query_readmode_set(
-            processinfo_and_querymatchspaceptr.querymatchspaceptr,
-            modes[mode]);
+          gt_querymatch_query_readmode_set(info_querymatch.querymatchspaceptr,
+                                           modes[mode]);
           if (gt_callenumquerymatches(false,
                                   gt_str_get(arguments->indexname),
                                   arguments->query_files,
@@ -1033,8 +1086,7 @@ static int gt_repfind_runner(int argc,
                                   querymatchoutoptions,
                                   eqmf,
                                   eqmf_data,
-                                  processinfo_and_querymatchspaceptr.
-                                    karlin_altschul_stat,
+                                  info_querymatch.karlin_altschul_stat,
                                   logger,
                                   err) != 0)
           {
@@ -1043,15 +1095,17 @@ static int gt_repfind_runner(int argc,
         }
       }
     }
+    gt_encseq_delete(encseq_for_desc);
     gt_querymatchoutoptions_delete(querymatchoutoptions);
-    gt_querymatch_delete(processinfo_and_querymatchspaceptr.querymatchspaceptr);
-    gt_karlin_altschul_stat_delete(processinfo_and_querymatchspaceptr.
-                                   karlin_altschul_stat);
+    gt_querymatch_delete(info_querymatch.querymatchspaceptr);
   }
+  gt_karlin_altschul_stat_delete(karlin_altschul_stat);
   gt_xdrop_matchinfo_delete(xdropmatchinfo);
   gt_greedy_extend_matchinfo_delete(greedyextendmatchinfo);
+  gt_ft_trimstat_delete(trimstat);
   polishing_info_delete(pol_info);
   gt_logger_delete(logger);
+  gt_querymatch_display_flag_delete(display_flag);
   if (repfindtimer != NULL)
   {
     char *keystring = gt_seed_extend_params_keystring(

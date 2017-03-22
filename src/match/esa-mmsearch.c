@@ -421,20 +421,20 @@ static GtUword gt_mmsearch_extendright(const GtEncseq *dbencseq,
 }
 
 void gt_queryuniquematch(bool selfmatch,
-                         GtKarlinAltschulStat *karlin_altschul_stat,
-                        const Suffixarray *suffixarray,
-                        uint64_t queryunitnum,
-                        GtQueryrepresentation *queryrep,
-                        GtUword minmatchlength,
-                        GtProcessquerymatch processquerymatch,
-                        void *processquerymatchinfo,
-                        GtQuerymatch *querymatchspaceptr)
+                         const Suffixarray *suffixarray,
+                         uint64_t queryunitnum,
+                         GtQueryrepresentation *queryrep,
+                         GtUword minmatchlength,
+                         GtProcessquerymatch processquerymatch,
+                         void *processquerymatchinfo,
+                         GtQuerymatch *querymatchspaceptr)
 {
   GtUword offset, totallength = gt_encseq_total_length(suffixarray->encseq),
           localqueryoffset = 0;
   uint64_t localqueryunitnum = queryunitnum;
 
   gt_assert(!selfmatch && queryrep->seqlen >= minmatchlength);
+  /*XXX gt_assert(!gt_querymatch_seq_desc_display(querymatchspaceptr));*/
   for (offset = 0; offset <= queryrep->seqlen - minmatchlength; offset++)
   {
     GtUword matchlen, dbstart;
@@ -460,7 +460,7 @@ void gt_queryuniquematch(bool selfmatch,
               dbseqlen = gt_encseq_seqlength(suffixarray->encseq,dbseqnum);
 
       gt_querymatch_init(querymatchspaceptr,
-                         karlin_altschul_stat,
+                         NULL,
                          matchlen,
                          dbstart,
                          dbseqnum,
@@ -473,7 +473,9 @@ void gt_queryuniquematch(bool selfmatch,
                          localqueryunitnum,
                          matchlen,
                          localqueryoffset,
-                         queryrep->seqlen);
+                         queryrep->seqlen,
+                         NULL,
+                         NULL);
       processquerymatch(processquerymatchinfo,querymatchspaceptr);
     }
     if (queryrep->sequence[offset] == (GtUchar) SEPARATOR)
@@ -497,8 +499,7 @@ static void gt_querysubstringmatch(bool selfmatch,
                                    GtUword minmatchlength,
                                    GtProcessquerymatch processquerymatch,
                                    void *processquerymatchinfo,
-                                   GtQuerymatch *querymatchspaceptr,
-                                   GtKarlinAltschulStat *karlin_altschul_stat)
+                                   GtQuerymatch *querymatchspaceptr)
 {
   GtMMsearchiterator *mmsi;
   GtUword totallength, localqueryoffset = 0;
@@ -530,6 +531,7 @@ static void gt_querysubstringmatch(bool selfmatch,
                                     &querysubstring))
       {
         GtUword dbseqnum, dbseqstartpos, dbseqlen, extend;
+        const char *db_desc = NULL, *query_desc = NULL;
 
         extend = gt_mmsearch_extendright(dbencseq,
                                          mmsi->esr,
@@ -549,7 +551,7 @@ static void gt_querysubstringmatch(bool selfmatch,
           dbseqnum = dbseqstartpos = dbseqlen = 0;
         }
         gt_querymatch_init(querymatchspaceptr,
-                           karlin_altschul_stat,
+                           NULL,
                            minmatchlength + extend,
                            dbstart,
                            dbseqnum,
@@ -562,7 +564,9 @@ static void gt_querysubstringmatch(bool selfmatch,
                            localqueryunitnum,
                            minmatchlength + extend,
                            localqueryoffset,
-                           queryrep->seqlen);
+                           queryrep->seqlen,
+                           db_desc,
+                           query_desc);
         processquerymatch(processquerymatchinfo,querymatchspaceptr);
       }
     }
@@ -593,7 +597,6 @@ static int gt_constructsarrandrunmmsearch(
                  void *processquerymatchinfo,
                  GtTimer *sfxprogress,
                  bool withprogressbar,
-                 GtKarlinAltschulStat *karlin_altschul_stat,
                  GtLogger *logger,
                  GtError *err)
 {
@@ -624,9 +627,6 @@ static int gt_constructsarrandrunmmsearch(
     GtQuerymatch *querymatchspaceptr = gt_querymatch_new();
     GtQueryrepresentation queryrep;
 
-    gt_karlin_altschul_stat_add_keyvalues(karlin_altschul_stat,
-                                          gt_encseq_total_length(dbencseq),
-                                          gt_encseq_num_of_sequences(dbencseq));
     queryrep.sequence = query;
     queryrep.encseq = NULL;
     queryrep.readmode = GT_READMODE_FORWARD;
@@ -650,8 +650,7 @@ static int gt_constructsarrandrunmmsearch(
                              (GtUword) minlength,
                              processquerymatch,
                              processquerymatchinfo,
-                             querymatchspaceptr,
-                             karlin_altschul_stat);
+                             querymatchspaceptr);
     }
     gt_querymatch_delete(querymatchspaceptr);
   }
@@ -670,7 +669,6 @@ int gt_sarrquerysubstringmatch(const GtUchar *dbseq,
                                GtAlphabet *alpha,
                                GtProcessquerymatch processquerymatch,
                                void *processquerymatchinfo,
-                               GtKarlinAltschulStat *karlin_altschul_stat,
                                GtLogger *logger,
                                GtError *err)
 {
@@ -704,7 +702,6 @@ int gt_sarrquerysubstringmatch(const GtUchar *dbseq,
                                      processquerymatchinfo,
                                      NULL,
                                      false,
-                                     karlin_altschul_stat,
                                      logger,
                                      err) != 0)
   {
@@ -840,6 +837,13 @@ const GtUchar *gt_querysubstringmatchiterator_query(
 {
   gt_assert(qsmi != NULL && qsmi->query_for_seqit != NULL);
   return qsmi->query_for_seqit;
+}
+
+const char *gt_querysubstringmatchiterator_desc(
+                      const GtQuerysubstringmatchiterator *qsmi)
+{
+  gt_assert(qsmi != NULL && qsmi->desc != NULL);
+  return qsmi->desc;
 }
 
 int gt_querysubstringmatchiterator_next(GtQuerysubstringmatchiterator *qsmi,

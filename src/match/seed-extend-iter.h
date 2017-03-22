@@ -45,11 +45,26 @@ void gt_seedextend_match_iterator_delete(GtSeedextendMatchIterator *semi);
 GtQuerymatch *gt_seedextend_match_iterator_next(
                              GtSeedextendMatchIterator *semi);
 
-/* The following functions set the display flag of the iterators
+/* The following function sets the display flag of the iterators
    querymatch-object. */
 
 void gt_seedextend_match_iterator_display_set(GtSeedextendMatchIterator *semi,
-                                              unsigned int display_flag);
+                                              const GtSeedExtendDisplayFlag
+                                                *display_flag);
+
+/* The following function sets the karlin_altschul_stat pointer to
+   the second argument */
+
+void gt_seedextend_match_iterator_karlin_altschul_stat_set(
+           GtSeedextendMatchIterator *semi,
+           GtKarlinAltschulStat *karlin_altschul_stat);
+
+/* The following function sets the karlin_altschul_stat pointer to
+   the second argument */
+
+void gt_seedextend_match_iterator_karlin_altschul_stat_set(
+           GtSeedextendMatchIterator *semi,
+           GtKarlinAltschulStat *karlin_altschul_stat);
 
 /* The following function reads all matches into an arrays and sorts the,. If
    <ascending is true, then all matches are sorted in ascending order of
@@ -73,13 +88,13 @@ GtQuerymatch *gt_seedextend_match_iterator_get(
    list is required, then set <generatealignment> to <true>,
    <alignmentwidth> to 0 and the other three boolean parameters to <false>. */
 
-void gt_seedextend_match_iterator_querymatchoutoptions_set(
+int gt_seedextend_match_iterator_querymatchoutoptions_set(
                     GtSeedextendMatchIterator *semi,
                     bool generatealignment,
                     bool showeoplist,
-                    GtUword alignmentwidth,
                     bool always_polished_ends,
-                    unsigned int display_flag);
+                    const GtSeedExtendDisplayFlag *display_flag,
+                    GtError *err);
 
 /* The following function return different components of the iterator
    object. */

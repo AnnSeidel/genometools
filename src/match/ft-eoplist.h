@@ -4,7 +4,6 @@
 #include "core/unused_api.h"
 #include "core/chardef.h"
 #include "match/ft-polish.h"
-#include "core/types_api.h"
 
 /* A list of edit operation is representation is represented by the following
    opaque type */
@@ -170,8 +169,10 @@ void gt_eoplist_reader_reset_width(GtEoplistReader *eoplist_reader,
 
 void gt_eoplist_set_sequences(GtEoplist *eoplist,
                               const GtUchar *useq,
+                              GtUword ustart,
                               GtUword ulen,
                               const GtUchar *vseq,
+                              GtUword vstart,
                               GtUword vlen);
 
 void gt_eoplist_format_generic(FILE *fp,
@@ -195,7 +196,7 @@ GtEoplist *gt_eoplist_new_from_cigar(const char *cigarstring,GtUword length);
 char *gt_eoplist2cigar_string(const GtEoplist *eoplist,
                               bool distinguish_mismatch_match);
 
-void gt_eoplist_seed_display_set(GtEoplist *eoplist);
+void gt_eoplist_display_seed_in_alignment_set(GtEoplist *eoplist);
 
 void gt_eoplist_set_seedoffset(GtEoplist *eoplist,
                                GtUword useedoffset,
@@ -203,9 +204,10 @@ void gt_eoplist_set_seedoffset(GtEoplist *eoplist,
 
 void gt_eoplist_show_plain(const GtEoplist *eoplist,FILE *fp);
 
-#ifndef OUTSIDE_OF_GT
+void gt_eoplist_show_cigar(GtEoplistReader *eoplist_reader,FILE *fp);
+
 void gt_eoplist_polished_ends(GtEoplist *eoplist,
-                              const Polishing_info *pol_info,
-                              bool withpolcheck);
-#endif
+                              const GtFtPolishing_info *pol_info,
+                              bool withpolcheck,
+                              bool pol_info_out);
 #endif
