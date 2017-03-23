@@ -1909,7 +1909,8 @@ typedef struct
 } GtDiagbandSeedPlainSequence;
 
 static void gt_diagbandseed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
-                                          bool seqdesc_display,
+                                          bool s_seqdesc_display,
+                                          bool q_seqdesc_display,
                                           const GtEncseq *aencseq,
                                           const GtSequencePartsInfo *aseqranges,
                                           GtUword aidx,
@@ -1920,7 +1921,7 @@ static void gt_diagbandseed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
                                           bool with_b_bytestring)
 {
   ps->previous_aseqnum = GT_UWORD_MAX;
-  if (seqdesc_display && aencseq != NULL &&
+  if (s_seqdesc_display && aencseq != NULL &&
       gt_encseq_has_description_support(aencseq))
   {
     ps->a_encseq_for_seq_desc = aencseq;
@@ -1928,7 +1929,7 @@ static void gt_diagbandseed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
   {
     ps->a_encseq_for_seq_desc = NULL;
   }
-  if (seqdesc_display && bencseq != NULL &&
+  if (q_seqdesc_display && bencseq != NULL &&
       gt_encseq_has_description_support(bencseq))
   {
     ps->b_encseq_for_seq_desc = bencseq;
@@ -2899,21 +2900,22 @@ static GtDiagbandseedExtendSegmentInfo *gt_diagbandseed_extendSI_new(
                                             ? gt_greedy_extend_seed_relative
                                             : gt_xdrop_extend_seed_relative;
   gt_diagbandseed_plainsequence_init(&esi->plainsequence_info,
-                                       gt_querymatch_seqdesc_display(
+                                     gt_querymatch_s_seqdesc_display(
                                              extp->display_flag),
-                                       aencseq,
-                                       aseqranges,
-                                       aidx,
-                                       extp->a_extend_char_access ==
+                                     gt_querymatch_q_seqdesc_display(
+                                             extp->display_flag),
+                                     aencseq,
+                                     aseqranges,
+                                     aidx,
+                                     extp->a_extend_char_access ==
                                          GT_EXTEND_CHAR_ACCESS_DIRECT ? true
                                                                       : false,
-                                       bencseq,
-                                       bseqranges,
-                                       bidx,
-                                       extp->b_extend_char_access ==
+                                     bencseq,
+                                     bseqranges,
+                                     bidx,
+                                     extp->b_extend_char_access ==
                                         GT_EXTEND_CHAR_ACCESS_DIRECT ? true
-                                                                     : false
-                                      );
+                                                                     : false);
   gt_diagbandseed_info_qm_set(&esi->info_querymatch,
                               extp,
                               querymoutopt,
