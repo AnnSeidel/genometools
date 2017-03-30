@@ -2516,6 +2516,8 @@ static void gt_diagbandseed_segment2maxmatches(
 
 static void gt_diagbandseed_segment2matches(
              void *v_segment2matches_info,
+             GT_UNUSED const GtEncseq *aencseq,
+             GT_UNUSED const GtEncseq *bencseq,
              GtUword aseqnum,
              GtUword bseqnum,
              const GtDiagbandStruct *diagband_struct,
@@ -2694,6 +2696,8 @@ static void gt_diagbandseed_segment2matches(
           {\
             gt_assert(segment_proc_func != NULL && segment_proc_info != NULL);\
             segment_proc_func(segment_proc_info,\
+                              aencseq,\
+                              bencseq,\
                               currsegm_aseqnum,\
                               currsegm_bseqnum,\
                               diagband_struct,\
@@ -2952,6 +2956,8 @@ static void gt_diagbandseed_extendSI_delete(
 
 typedef void (*GtDiagbandseedProcessSegmentFunc)(
                         void *v_process_segment_info,
+                        const GtEncseq *aencseq,
+                        const GtEncseq *bencseq,
                         GtUword aseqnum,
                         GtUword bseqnum,
                         const GtDiagbandStruct *diagband_struct,
