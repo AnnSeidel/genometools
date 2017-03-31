@@ -129,7 +129,9 @@ static int gt_exact_selfmatch_with_output(void *info,
                              len,
                              false))
   {
-    gt_querymatch_prettyprint(info_querymatch->querymatchspaceptr);
+    /* for exact matches we do not output evalues and bitscores */
+    gt_querymatch_prettyprint(DBL_MAX,DBL_MAX,
+                              info_querymatch->querymatchspaceptr);
   }
   return 0;
 }
@@ -571,6 +573,7 @@ static int gt_callenumquerymatches(bool selfmatch,
                                    void *eqmf_data,
                                    const GtKarlinAltschulStat
                                       *karlin_altschul_stat,
+                                   const GtSeedExtendDisplayFlag *display_flag,
                                    GtLogger *logger,
                                    GtError *err)
 {
@@ -647,6 +650,7 @@ static int gt_callenumquerymatches(bool selfmatch,
     {
       same_encseq = false;
     }
+    gt_querymatch_display_set(exactseed,display_flag);
     if (querymatchoutoptions != NULL)
     {
       gt_querymatch_outoptions_set(exactseed,querymatchoutoptions);
@@ -734,7 +738,8 @@ static int gt_callenumquerymatches(bool selfmatch,
                                    matchlength,
                                    false))
         {
-          gt_querymatch_prettyprint(exactseed);
+          /* for exact matches we do not output evalues and bitscores */
+          gt_querymatch_prettyprint(DBL_MAX,DBL_MAX,exactseed);
         }
       }
     }
@@ -778,7 +783,7 @@ static int gt_repfind_runner(int argc,
   const bool flags[] = {arguments->forward,
                         arguments->reverse,
                         arguments->reverse_complement};
-  GtSeedExtendDisplayFlag *display_flag = gt_querymatch_display_flag_new();
+  GtSeedExtendDisplayFlag *display_flag = NULL;
   GtFtTrimstat *trimstat = NULL;
 
   gt_error_check(err);
@@ -795,9 +800,8 @@ static int gt_repfind_runner(int argc,
   }
   if (!haserr)
   {
-    if (gt_querymatch_display_flag_args_set(display_flag,
-                                            arguments->display_args,
-                                            err) != 0)
+    display_flag = gt_querymatch_display_flag_new(arguments->display_args,err);
+    if (display_flag == NULL)
     {
       haserr = true;
     }
@@ -841,7 +845,7 @@ static int gt_repfind_runner(int argc,
   if (!haserr)
   {
     if (gt_option_is_set(arguments->refextendgreedyoption) ||
-        gt_querymatch_display_alignment(display_flag) ||
+        gt_querymatch_alignment_display(display_flag) ||
         gt_option_is_set(arguments->refextendxdropoption))
     {
       if (gt_greedy_extend_char_access(&cam_a,
@@ -897,7 +901,7 @@ static int gt_repfind_runner(int argc,
     GtEncseq *encseq_for_desc = NULL;
     GtProcessinfo_and_querymatchspaceptr info_querymatch = {NULL,NULL,NULL};
     info_querymatch.karlin_altschul_stat = karlin_altschul_stat;
-    if (gt_querymatch_display_alignment(display_flag) ||
+    if (gt_querymatch_alignment_display(display_flag) ||
         (gt_option_is_set(arguments->refextendxdropoption) &&
          !arguments->noxpolish))
     {
@@ -966,7 +970,7 @@ static int gt_repfind_runner(int argc,
           eqmf_data = (void *) &info_querymatch;
         }
       }
-      if (gt_querymatch_s_seqdesc_display(display_flag))
+      if (gt_querymatch_s_desc_display(display_flag))
       {
         GtEncseqLoader *encseq_loader = gt_encseq_loader_new();
         gt_encseq_loader_require_des_tab(encseq_loader);
@@ -1060,6 +1064,7 @@ static int gt_repfind_runner(int argc,
                                           eqmf,
                                           eqmf_data,
                                           info_querymatch.karlin_altschul_stat,
+                                          display_flag,
                                           logger,
                                           err) != 0)
               {
@@ -1087,6 +1092,7 @@ static int gt_repfind_runner(int argc,
                                   eqmf,
                                   eqmf_data,
                                   info_querymatch.karlin_altschul_stat,
+                                  display_flag,
                                   logger,
                                   err) != 0)
           {

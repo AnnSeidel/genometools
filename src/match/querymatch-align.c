@@ -78,7 +78,7 @@ GtQuerymatchoutoptions *gt_querymatchoutoptions_new(bool generate_eoplist,
     querymatchoutoptions->characters = NULL;
     querymatchoutoptions->wildcardshow = 0;
   }
-  display_alignment = gt_querymatch_display_alignment(display_flag);
+  display_alignment = gt_querymatch_alignment_display(display_flag);
   querymatchoutoptions->generate_eoplist
     = generate_eoplist || display_alignment || show_eoplist;
   querymatchoutoptions->show_eoplist = show_eoplist;
@@ -170,7 +170,7 @@ void gt_querymatchoutoptions_extend(
                                  querymatchoutoptions->pol_info,true,
                                  gt_querymatch_polinfo_display(display_flag));
       }
-      if (gt_querymatch_seed_in_alignment_display(display_flag))
+      if (gt_querymatch_seed_in_algn_display(display_flag))
       {
         gt_eoplist_display_seed_in_alignment_set(querymatchoutoptions->eoplist);
       }
@@ -615,59 +615,53 @@ bool gt_querymatchoutoptions_alignment_prepare(GtQuerymatchoutoptions
   return seededalignment;
 }
 
+void gt_querymatchoutoptions_cigar_show(const GtQuerymatchoutoptions
+                                              *querymatchoutoptions,FILE *fp)
+{
+  gt_assert(querymatchoutoptions != NULL &&
+            querymatchoutoptions->eoplist_reader != NULL);
+  gt_eoplist_reader_reset(querymatchoutoptions->eoplist_reader,
+                          querymatchoutoptions->eoplist);
+  gt_eoplist_show_cigar(querymatchoutoptions->eoplist_reader,fp);
+  gt_eoplist_reset(querymatchoutoptions->eoplist);
+}
+
 void gt_querymatchoutoptions_alignment_show(const GtQuerymatchoutoptions
                                               *querymatchoutoptions,
                                             GtUword distance,
                                             bool verify_alignment,
                                             FILE *fp)
 {
-  if (querymatchoutoptions == NULL)
+  gt_assert(querymatchoutoptions != NULL);
+  if (querymatchoutoptions->eoplist_reader != NULL)
   {
-    fputc('\n',fp);
-  } else
-  {
-    if (querymatchoutoptions->show_eoplist)
+    if (distance > 0)
     {
-      fputc(' ',fp);
-      gt_assert(querymatchoutoptions->eoplist_reader != NULL);
-      gt_eoplist_reader_reset(querymatchoutoptions->eoplist_reader,
-                              querymatchoutoptions->eoplist);
-      gt_eoplist_show_cigar(querymatchoutoptions->eoplist_reader,fp);
-      fputc('\n',fp);
+      if (verify_alignment)
+      {
+        gt_assert(querymatchoutoptions->eoplist_reader_verify != NULL);
+        gt_eoplist_verify(querymatchoutoptions->eoplist,
+                          querymatchoutoptions->eoplist_reader_verify,
+                          distance,true);
+      }
+      gt_eoplist_format_generic(fp,
+                                querymatchoutoptions->eoplist,
+                                querymatchoutoptions->eoplist_reader,
+                                true,
+                                querymatchoutoptions->characters,
+                                querymatchoutoptions->wildcardshow);
     } else
     {
-      fputc('\n',fp);
-      if (querymatchoutoptions->eoplist_reader != NULL)
-      {
-        if (distance > 0)
-        {
-          if (verify_alignment)
-          {
-            gt_assert(querymatchoutoptions->eoplist_reader_verify != NULL);
-            gt_eoplist_verify(querymatchoutoptions->eoplist,
-                              querymatchoutoptions->eoplist_reader_verify,
-                              distance,true);
-          }
-          gt_eoplist_format_generic(fp,
-                                    querymatchoutoptions->eoplist,
-                                    querymatchoutoptions->eoplist_reader,
-                                    true,
-                                    querymatchoutoptions->characters,
-                                    querymatchoutoptions->wildcardshow);
-        } else
-        {
-          gt_eoplist_format_exact(fp,
-                                  querymatchoutoptions->eoplist,
-                                  querymatchoutoptions->eoplist_reader,
-                                  querymatchoutoptions->characters);
-        }
-      }
+      gt_eoplist_format_exact(fp,
+                              querymatchoutoptions->eoplist,
+                              querymatchoutoptions->eoplist_reader,
+                              querymatchoutoptions->characters);
     }
-    if (querymatchoutoptions->eoplist_reader != NULL ||
-        querymatchoutoptions->show_eoplist)
-    {
-      gt_eoplist_reset(querymatchoutoptions->eoplist);
-    }
+  }
+  if (querymatchoutoptions->eoplist_reader != NULL ||
+      querymatchoutoptions->show_eoplist)
+  {
+    gt_eoplist_reset(querymatchoutoptions->eoplist);
   }
 }
 

@@ -1909,8 +1909,8 @@ typedef struct
 } GtDiagbandSeedPlainSequence;
 
 static void gt_diagbandseed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
-                                          bool s_seqdesc_display,
-                                          bool q_seqdesc_display,
+                                          bool s_desc_display,
+                                          bool q_desc_display,
                                           const GtEncseq *aencseq,
                                           const GtSequencePartsInfo *aseqranges,
                                           GtUword aidx,
@@ -1921,7 +1921,7 @@ static void gt_diagbandseed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
                                           bool with_b_bytestring)
 {
   ps->previous_aseqnum = GT_UWORD_MAX;
-  if (s_seqdesc_display && aencseq != NULL &&
+  if (s_desc_display && aencseq != NULL &&
       gt_encseq_has_description_support(aencseq))
   {
     ps->a_encseq_for_seq_desc = aencseq;
@@ -1929,7 +1929,7 @@ static void gt_diagbandseed_plainsequence_init(GtDiagbandSeedPlainSequence *ps,
   {
     ps->a_encseq_for_seq_desc = NULL;
   }
-  if (q_seqdesc_display && bencseq != NULL &&
+  if (q_desc_display && bencseq != NULL &&
       gt_encseq_has_description_support(bencseq))
   {
     ps->b_encseq_for_seq_desc = bencseq;
@@ -2177,7 +2177,7 @@ static int gt_diagbandseed_possibly_extend(const GtArrayGtDiagbandseedRectangle
                                     esi->errorpercentage,
                                     esi->evalue_threshold))
       {
-        gt_querymatch_enhanced_prettyprint(evalue,bit_score,querymatch);
+        gt_querymatch_prettyprint(evalue,bit_score,querymatch);
         ret = 3; /* output match */
       } else
       {
@@ -2516,6 +2516,8 @@ static void gt_diagbandseed_segment2maxmatches(
 
 static void gt_diagbandseed_segment2matches(
              void *v_segment2matches_info,
+             GT_UNUSED const GtEncseq *aencseq,
+             GT_UNUSED const GtEncseq *bencseq,
              GtUword aseqnum,
              GtUword bseqnum,
              const GtDiagbandStruct *diagband_struct,
@@ -2694,6 +2696,8 @@ static void gt_diagbandseed_segment2matches(
           {\
             gt_assert(segment_proc_func != NULL && segment_proc_info != NULL);\
             segment_proc_func(segment_proc_info,\
+                              aencseq,\
+                              bencseq,\
                               currsegm_aseqnum,\
                               currsegm_bseqnum,\
                               diagband_struct,\
@@ -2900,9 +2904,9 @@ static GtDiagbandseedExtendSegmentInfo *gt_diagbandseed_extendSI_new(
                                             ? gt_greedy_extend_seed_relative
                                             : gt_xdrop_extend_seed_relative;
   gt_diagbandseed_plainsequence_init(&esi->plainsequence_info,
-                                     gt_querymatch_s_seqdesc_display(
+                                     gt_querymatch_s_desc_display(
                                              extp->display_flag),
-                                     gt_querymatch_q_seqdesc_display(
+                                     gt_querymatch_q_desc_display(
                                              extp->display_flag),
                                      aencseq,
                                      aseqranges,
@@ -2952,6 +2956,8 @@ static void gt_diagbandseed_extendSI_delete(
 
 typedef void (*GtDiagbandseedProcessSegmentFunc)(
                         void *v_process_segment_info,
+                        const GtEncseq *aencseq,
+                        const GtEncseq *bencseq,
                         GtUword aseqnum,
                         GtUword bseqnum,
                         const GtDiagbandStruct *diagband_struct,
@@ -3015,7 +3021,8 @@ static void gt_diagbandseed_process_seeds(GtSeedpairlist *seedpairlist,
   }
   if (seedpairlist->maxmat_show)
   {
-    gt_querymatch_fields_exact_output(stream);
+    fprintf(stream,"# Fields: s.len, s.seqnum, s.start, strand, q.seqnum, "
+                   "q.start\n");
   } else
   {
     const GtUword bmaxlen = gt_encseq_max_seq_length(bencseq);
@@ -3627,7 +3634,7 @@ static int gt_diagbandseed_algorithm(const GtDiagbandseedInfo *arg,
       processinfo = (void *) xdropinfo;
     }
     alignmentwidth = gt_querymatch_display_alignmentwidth(extp->display_flag);
-    show_eoplist = gt_querymatch_cigarstring_display(extp->display_flag);
+    show_eoplist = gt_querymatch_cigar_display(extp->display_flag);
     if (extp->extendxdrop || alignmentwidth > 0 || extp->verify_alignment ||
         show_eoplist)
     {

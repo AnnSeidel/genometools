@@ -17,47 +17,11 @@
 
 #ifndef QUERYMATCH_DISPLAY_H
 #define QUERYMATCH_DISPLAY_H
+#include <stdbool.h>
 #include "core/str_array_api.h"
 #include "core/error_api.h"
 
 typedef struct GtSeedExtendDisplayFlag GtSeedExtendDisplayFlag;
-
-bool gt_querymatch_cigarstring_display(const GtSeedExtendDisplayFlag
-                                          *display_flag);
-
-bool gt_querymatch_seed_display(const GtSeedExtendDisplayFlag *display_flag);
-
-bool gt_querymatch_failed_seed_display(const GtSeedExtendDisplayFlag
-                                         *display_flag);
-
-bool gt_querymatch_seed_in_alignment_display(
-                 const GtSeedExtendDisplayFlag *display_flag);
-
-bool gt_querymatch_evalue_display(const GtSeedExtendDisplayFlag *display_flag);
-
-bool gt_querymatch_bitscore_display(const GtSeedExtendDisplayFlag
-                                       *display_flag);
-
-bool gt_querymatch_s_seqdesc_display(const GtSeedExtendDisplayFlag
-                                      *display_flag);
-
-bool gt_querymatch_q_seqdesc_display(const GtSeedExtendDisplayFlag
-                                      *display_flag);
-
-bool gt_querymatch_seqlength_display(const GtSeedExtendDisplayFlag
-                                       *display_flag);
-
-bool gt_querymatch_polinfo_display(const GtSeedExtendDisplayFlag
-                                      *display_flag);
-
-bool gt_querymatch_fstperquery_display(const GtSeedExtendDisplayFlag
-                                            *display_flag);
-
-GtUword gt_querymatch_display_alignmentwidth(const GtSeedExtendDisplayFlag
-                                                *display_flag);
-
-bool gt_querymatch_display_alignment(const GtSeedExtendDisplayFlag
-                                     *display_flag);
 
 void gt_querymatch_display_seedpos_relative_set(GtSeedExtendDisplayFlag
                                                 *display_flag,
@@ -70,20 +34,27 @@ bool gt_querymatch_display_seedpos_a_relative(const GtSeedExtendDisplayFlag
 bool gt_querymatch_display_seedpos_b_relative(const GtSeedExtendDisplayFlag
                                                 *display_flag);
 
-GtSeedExtendDisplayFlag *gt_querymatch_display_flag_new(void);
-
-int gt_querymatch_display_flag_args_set(
-               GtSeedExtendDisplayFlag *display_flag,
-               const GtStrArray *display_args,
-               GtError *err);
+GtSeedExtendDisplayFlag *gt_querymatch_display_flag_new(const GtStrArray
+                                                          *display_args,
+                                                        GtError *err);
 
 void gt_querymatch_display_flag_delete(GtSeedExtendDisplayFlag *display_flag);
-
-const char *gt_querymatch_display_help(void);
 
 void gt_querymatch_fields_approx_output(const GtSeedExtendDisplayFlag
                                          *display_flag,FILE *stream);
 
-void gt_querymatch_fields_exact_output(FILE *stream);
+const unsigned int *gt_querymatch_display_order(unsigned int *numcolumns,
+                                                const GtSeedExtendDisplayFlag
+                                                   *display_flag);
+
+const char *gt_querymatch_display_help(void);
+
+bool gt_querymatch_alignment_display(const GtSeedExtendDisplayFlag
+                                       *display_flag);
+
+GtUword gt_querymatch_display_alignmentwidth(const GtSeedExtendDisplayFlag
+                                                *display_flag);
+
+#include "match/se-display-fwd.inc"
 
 #endif
