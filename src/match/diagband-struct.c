@@ -28,6 +28,8 @@
 #define GT_DIAGBANDSEED_DIAGONALBAND(AMAXLEN,LOGDIAGBANDWIDTH,APOS,BPOS)\
         (GT_DIAGBANDSEED_DIAGONAL(AMAXLEN,APOS,BPOS) >> (LOGDIAGBANDWIDTH))
 
+#define SIZE 100
+
 GtUword gt_diagband_struct_num_diagbands(GtUword amaxlen,GtUword bmaxlen,
                                          GtUword logdiagbandwidth)
 {
@@ -43,6 +45,12 @@ struct GtDiagbandStruct
   GtDiagbandseedScore *score;
   GtDiagbandseedPosition *lastpos;
 };
+
+typedef struct SeedArea{
+  GtUword abegin, aend, bbegin, bend, diagidx; 
+} SeedArea;
+
+GtUword amaxlen, logdiagbandwidth; //TODO: GLOBALE VARIABLE, noch aendern!!!
 
 bool gt_diagband_struct_empty(const GtDiagbandStruct *diagband_struct)
 {
@@ -297,22 +305,81 @@ static void gt_diagband_statistics_score_add(
   }
 }
 
+static int compare_seeds_by_bstart(const void *p1, const void *p2)
+{
+  const SeedArea *area1 = (const SeedArea *) p1;
+  const SeedArea *area2 = (const SeedArea *) p2;
+  
+  if(area1->bbegin < area2->bbegin)
+    return -1;
+    
+  if(area1->bbegin > area2->bbegin)
+    return 1;
+  
+  //TODO: im else fall vll area kleiner einstufen, die naeher an der hauptdiagonale ist
+  //statt kleinerer index? oder laengeres?
+  
+  if(area1->diagidx < area2->diagidx)
+    return -1;
+    
+  if(area1->diagidx > area2->diagidx)
+    return 1;
+  
+  return 0;
+
+}
+
+
+static int compare_seeds_by_diags(const void *p1, const void *p2)
+{
+
+  const GtSeedpairPositions *seed1 = (const GtSeedpairPositions*)p1;
+  const GtSeedpairPositions *seed2 = (const GtSeedpairPositions*)p2;
+
+  const GtUword diagband_idx1
+  = GT_DIAGBANDSEED_DIAGONALBAND(amaxlen,
+                                 logdiagbandwidth,
+                                 seed1->apos,
+                                 seed1->bpos);
+
+    const GtUword diagband_idx2
+  = GT_DIAGBANDSEED_DIAGONALBAND(amaxlen,
+                                 logdiagbandwidth,
+                                 seed2->apos,
+                                 seed2->bpos);
+  
+  if (diagband_idx1>diagband_idx2)
+    return 1;
+  
+  if (diagband_idx1<diagband_idx2)
+    return -1;
+    
+  if (seed1->bpos < seed2->bpos)
+    return -1;
+    
+  if (seed1->bpos > seed2->bpos)
+    return 1;
+  
+  return 0;
+}
+
 void gt_diagband_statistics_add(void *v_diagband_statistics,
                                 /* remove GT_UNUSED once arguments are used */
-                                GT_UNUSED const GtEncseq *aencseq,
-                                GT_UNUSED const GtEncseq *bencseq,
+                                const GtEncseq *aencseq,
+                                const GtEncseq *bencseq,
                                 GT_UNUSED GtUword aseqnum,
                                 GT_UNUSED GtUword bseqnum,
                                 const GtDiagbandStruct *diagband_struct,
                                 const GtDiagbandseedMaximalmatch *memstore,
-                                GT_UNUSED unsigned int seedlength,
+                                unsigned int seedlength,
                                 const GtSeedpairPositions *seedstore,
                                 GtUword segment_length)
 {
   GtUword idx;
   GtDiagbandStatistics *diagband_statistics
     = (GtDiagbandStatistics *) v_diagband_statistics;
-
+  
+ 
   if (diagband_statistics->track == NULL)
   {
     GT_INITBITTAB(diagband_statistics->track,diagband_struct->num_diagbands);
@@ -322,16 +389,154 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
   }
   if (seedstore != NULL)
   {
-    for (idx = 0; idx < segment_length; idx++)
-    {
-      const GtUword diagband_idx
-        = GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
+    //TODO: ACHTUNG GLOBALE VARIABLE, noch aendern, benoetigt fuer qsort!!!
+    amaxlen = diagband_struct->amaxlen;
+    logdiagbandwidth = diagband_struct->logdiagbandwidth;
+
+    //for (idx = 0; idx < segment_length; idx++)
+    //{
+      ////printf("apos: %d, bpos: %d\n", seedstore[idx].apos, seedstore[idx].bpos);
+      //const GtUword diagband_idx
+        //= GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
+                                       //diagband_struct->logdiagbandwidth,
+                                       //seedstore[idx].apos,
+                                       //seedstore[idx].bpos);
+      ////gt_diagband_statistics_score_add(diagband_statistics,diagband_struct,
+      ////                                 diagband_idx);
+    //}
+    GtUword curr_diagband_idx, prev_diagband_idx, count=0, size=0;
+    GtSeedpairPositions *seedstore2 = gt_malloc(sizeof(*seedstore2)*segment_length);
+    seedstore2 = memcpy(seedstore2,seedstore, segment_length*sizeof(*seedstore));
+    
+    //TODO: struct von pointern auf GtSeedpairPositions statt memcpy?
+
+    //TODO: use radixsort?
+    qsort(seedstore2, segment_length, sizeof(GtSeedpairPositions), compare_seeds_by_diags);
+
+    SeedArea *seed_area = gt_malloc(diagband_struct->used_diagbands*sizeof(*seed_area));
+    size=diagband_struct->used_diagbands;
+
+    
+    
+    prev_diagband_idx = GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
                                        diagband_struct->logdiagbandwidth,
-                                       seedstore[idx].apos,
-                                       seedstore[idx].bpos);
-      gt_diagband_statistics_score_add(diagband_statistics,diagband_struct,
-                                       diagband_idx);
-    }
+                                       seedstore2[0].apos,
+                                       seedstore2[0].bpos);
+    
+    seed_area[0].abegin = seedstore2[0].apos-seedlength;
+    seed_area[0].bbegin = seedstore2[0].bpos-seedlength;
+    seed_area[0].aend = seedstore2[0].apos;
+    seed_area[0].bend = seedstore2[0].bpos;
+    seed_area[0].diagidx = prev_diagband_idx;
+    count++;
+    
+    
+      
+    for (idx = 1; idx < segment_length; idx++)
+    {
+      
+        curr_diagband_idx = GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
+                                       diagband_struct->logdiagbandwidth,
+                                       seedstore2[idx].apos,
+                                       seedstore2[idx].bpos);
+        
+        if (curr_diagband_idx == prev_diagband_idx)
+        {
+          
+          
+          GtUword bbegin = seedstore2[idx].bpos-seedlength;
+          if (seed_area[idx-1].bend +1 <= bbegin)
+          {
+            if(seed_area[idx-1].bend < seedstore2[idx].bpos)
+            {
+              seed_area[count].aend = seedstore2[idx].apos;
+              seed_area[count].bend = seedstore2[idx].bpos;
+            }
+          }
+          else //TODO: else faelle verknuepfen
+          {
+            if (count == size)
+            {
+              size += SIZE;
+              seed_area = gt_realloc(seed_area, sizeof(*seed_area)*size);
+            }
+            seed_area[count].abegin = seedstore2[idx].apos-seedlength+1;
+            seed_area[count].bbegin = seedstore2[idx].bpos-seedlength+1;
+            seed_area[count].aend = seedstore2[idx].apos;
+            seed_area[count].bend = seedstore2[idx].bpos;
+            seed_area[count].diagidx = curr_diagband_idx;
+            count++;
+
+          }
+          
+        }
+        else
+        {//TODO: entferne area wenn nur ein einzelnes kmer auf der diagonalen liegt
+          
+          if (count == size)
+          {
+            size += SIZE;
+            seed_area = gt_realloc(seed_area, sizeof(*seed_area)*size);
+          }
+          
+          seed_area[count].abegin = seedstore2[idx].apos-seedlength+1;
+          seed_area[count].bbegin = seedstore2[idx].bpos-seedlength+1;
+          seed_area[count].aend = seedstore2[idx].apos;
+          seed_area[count].bend = seedstore2[idx].bpos;
+          seed_area[count].diagidx = curr_diagband_idx;
+          count++;
+        }
+  
+      }
+      gt_free(seedstore2);
+
+      // sort seed_areas by start in bseq
+      qsort(seed_area, count, sizeof(SeedArea), compare_seeds_by_bstart);
+
+      SeedArea *pre_area = &seed_area[0];
+      GtUword nextstart_min= pre_area->bend+1,
+      mismatches=0,
+      len =0, jdx;
+      bool anchor = false;
+
+      // traverse all seed_areas
+      //TODO: min length?
+      for(idx=1; idx<count; idx++)
+      {
+        if (seed_area[idx].bbegin < nextstart_min)
+          continue;
+        
+        if (seed_area[idx].diagidx != pre_area->diagidx)
+        {
+          if(anchor)
+            len += pre_area->bend-pre_area->bbegin+1;
+          pre_area = &seed_area[idx];
+          nextstart_min = pre_area->bend+1;
+          anchor = false;
+        }
+        else /* find two seed_areas on the same diagonal, current area starts
+                earliest at prev_area+1*/
+        {
+          GtUword range = seed_area[idx].bbegin-pre_area->bend+1;
+          for (jdx = 0; jdx < range; jdx++)
+          {
+            len++;
+            
+            if (gt_encseq_get_encoded_char(aencseq, pre_area->aend+1+jdx,GT_READMODE_FORWARD) !=
+            gt_encseq_get_encoded_char(bencseq, pre_area->bend+1+jdx,GT_READMODE_FORWARD))
+            {
+              mismatches++;
+            }
+          }
+          pre_area = &seed_area[idx];
+          nextstart_min = pre_area->bend+1;
+          anchor=true;
+        }
+      }
+      
+      printf("substitutions per site: %f\n", mismatches/(float)len);
+      gt_free(seed_area);
+  
   } else
   {
     gt_assert(memstore != NULL);
