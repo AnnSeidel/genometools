@@ -424,7 +424,16 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
     SeedArea *seed_area = gt_malloc(diagband_struct->used_diagbands*sizeof(*seed_area));
     size=diagband_struct->used_diagbands;
 
-    
+    /*for(idx=0; idx<segment_length; idx++)
+    {
+      GtUword diagband_idx = GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
+                                       diagband_struct->logdiagbandwidth,
+                                       seedstore2[idx].apos,
+                                       seedstore2[idx].bpos);
+      if (diagband_idx==diagband_struct->amaxlen)
+      {  printf("apos: %d, bpos: %d, idx:%ld\n",
+        seedstore2[idx].apos,seedstore2[idx].bpos, diagband_idx-amaxlen);
+    }}*/
     
     prev_diagband_idx = GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
                                        diagband_struct->logdiagbandwidth,
@@ -451,14 +460,14 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
         if (curr_diagband_idx == prev_diagband_idx)
         {
           
-          
+          gt_assert(count > 0);
           GtUword bbegin = seedstore2[idx].bpos-seedlength;
-          if (seed_area[idx-1].bend +1 <= bbegin)
+          if (seed_area[count-1].bend +1 >= bbegin)
           {
-            if(seed_area[idx-1].bend < seedstore2[idx].bpos)
+            if(seed_area[count-1].bend < seedstore2[idx].bpos)
             {
-              seed_area[count].aend = seedstore2[idx].apos;
-              seed_area[count].bend = seedstore2[idx].bpos;
+              seed_area[count-1].aend = seedstore2[idx].apos;
+              seed_area[count-1].bend = seedstore2[idx].bpos;
             }
           }
           else //TODO: else faelle verknuepfen
@@ -494,19 +503,26 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
           seed_area[count].diagidx = curr_diagband_idx;
           count++;
         }
-  
+        prev_diagband_idx = curr_diagband_idx;
       }
       gt_free(seedstore2);
 
       // sort seed_areas by start in bseq
       qsort(seed_area, count, sizeof(SeedArea), compare_seeds_by_bstart);
+      /*printf("=============================\n");
+      for(idx=0; idx<count; idx++)
+      {
+        printf("astart: %lu, aend: %lu, bstart:%lu, bend:%lu, idx:%ld\n",
+        seed_area[idx].abegin, seed_area[idx].aend,
+        seed_area[idx].bbegin, seed_area[idx].bend, seed_area[idx].diagidx-amaxlen);
+      }*/
 
       SeedArea *pre_area = &seed_area[0];
       GtUword nextstart_min= pre_area->bend+1,
       mismatches=0,
       len = 0, jdx;
       bool anchor = false;
-
+//printf("first idx: %lu, nextstart_min: %ld\n", pre_area->diagidx-amaxlen, pre_area->bend+1);
       // traverse all seed_areas
       //TODO: min length?
       for(idx=1; idx<count; idx++)
@@ -542,6 +558,7 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
         }
       }
       
+      //printf("mismatches: %lu, len: %lu\n", mismatches, len);
       printf("substitutions per site: %f\n", mismatches/(float)len);
       gt_free(seed_area);
   
