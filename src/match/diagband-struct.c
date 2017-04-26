@@ -241,9 +241,9 @@ void gt_diagband_struct_reset(GtDiagbandStruct *diagband_struct,
 
 struct GtDiagbandStatistics
 {
-  bool compute_sum;
+  bool compute_sum, compute_sps;
   bool forward;
-  GtUword sumscore;
+  GtUword sumscore, substitution_per_site;
   GtBitsequence *track;
 };
 
@@ -317,7 +317,7 @@ static int compare_seeds_by_bstart(const void *p1, const void *p2)
     return 1;
   
   //TODO: im else fall vll area kleiner einstufen, die naeher an der hauptdiagonale ist
-  //statt kleinerer index? oder laengeres?
+  //statt kleinerer index? oder laengere seed_area bevorzugen?
   
   if(area1->diagidx < area2->diagidx)
     return -1;
@@ -393,22 +393,30 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
     amaxlen = diagband_struct->amaxlen;
     logdiagbandwidth = diagband_struct->logdiagbandwidth;
 
-    //for (idx = 0; idx < segment_length; idx++)
-    //{
-      ////printf("apos: %d, bpos: %d\n", seedstore[idx].apos, seedstore[idx].bpos);
-      //const GtUword diagband_idx
-        //= GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
-                                       //diagband_struct->logdiagbandwidth,
-                                       //seedstore[idx].apos,
-                                       //seedstore[idx].bpos);
-      ////gt_diagband_statistics_score_add(diagband_statistics,diagband_struct,
-      ////                                 diagband_idx);
-    //}
+    /*
+    for (idx = 0; idx < segment_length; idx++)
+    {
+      const GtUword diagband_idx
+        = GT_DIAGBANDSEED_DIAGONALBAND(diagband_struct->amaxlen,
+                                       diagband_struct->logdiagbandwidth,
+                                       seedstore[idx].apos,
+                                       seedstore[idx].bpos);
+      
+      if (diagband_statistics->compute_sum)
+      {
+        gt_diagband_statistics_score_add(diagband_statistics,
+                                         diagband_struct,
+                                         diagband_idx);
+      }
+    }*/
+
     GtUword curr_diagband_idx, prev_diagband_idx, count=0, size=0;
     GtSeedpairPositions *seedstore2 = gt_malloc(sizeof(*seedstore2)*segment_length);
     seedstore2 = memcpy(seedstore2,seedstore, segment_length*sizeof(*seedstore));
     
     //TODO: struct von pointern auf GtSeedpairPositions statt memcpy?
+    //TODO: folgende Zeilen in for-Schleife oben einfuegen sobald const Problem
+    // von seedstore geklaert ist
 
     //TODO: use radixsort?
     qsort(seedstore2, segment_length, sizeof(GtSeedpairPositions), compare_seeds_by_diags);
@@ -496,7 +504,7 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
       SeedArea *pre_area = &seed_area[0];
       GtUword nextstart_min= pre_area->bend+1,
       mismatches=0,
-      len =0, jdx;
+      len = 0, jdx;
       bool anchor = false;
 
       // traverse all seed_areas
@@ -539,7 +547,7 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
   
   } else
   {
-    gt_assert(memstore != NULL);
+
     for (idx = 0; idx < segment_length; idx++)
     {
       const GtUword diagband_idx
