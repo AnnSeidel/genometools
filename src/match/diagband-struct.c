@@ -413,7 +413,7 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
   if (seedstore != NULL)
   {
     if (diagband_statistics->compute_sps)
-    {printf("diagband_statistics->compute_sps\n");
+    {
       GtSeedpairPositions *seedstore2, *pre_area;
       GtUword nextstart_min, mismatches, len, jdx, pre_diagband_idx,diagband_idx;
       bool anchor = false;
@@ -496,7 +496,7 @@ void gt_diagband_statistics_add(void *v_diagband_statistics,
       gt_free(seedstore2);
     }
     else
-    {printf("diagband_statistics->compute_sum\n");
+    {
       for (idx = 0; idx < segment_length; idx++)
       {
         const GtUword diagband_idx
