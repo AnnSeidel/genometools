@@ -151,7 +151,7 @@ static GtOptionParser* gt_seed_extend_option_parser_new(void *tool_arguments)
   static GtRange seedpairdistance_defaults = {1UL, GT_UWORD_MAX};
   /* When extending the following array, do not forget to update
      the help message accordingly. */
-  static const char *diagband_statistics_choices[] = {"sum", NULL};
+  static const char *diagband_statistics_choices[] = {"sum", "sps", NULL};
   gt_assert(arguments != NULL);
 
   /* init */
@@ -213,7 +213,7 @@ static GtOptionParser* gt_seed_extend_option_parser_new(void *tool_arguments)
                                    "Compute statistics from diagonal "
                                    "band scores; parameter specifies "
                                    "kind of statistics, possible choices are\n"
-                                   "sum",
+                                   "sum, sps",
                                    arguments->diagband_statistics_arg,
                                    diagband_statistics_choices[0],
                                    diagband_statistics_choices);
